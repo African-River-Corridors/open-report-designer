@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Report Designer (ORD): an ARC open library</title>
+<meta name="description" content="ORD is a report engine for open engineering tools: one typed report document to PDF, HTML and Word. Under construction.">
+<link rel="canonical" href="https://www.africanrivercorridors.com/ord">
+<link rel="icon" href="/ord/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/ord/tokens.css">
+<link rel="stylesheet" href="/ord/site.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="container bar">
+    <a class="home" href="/">African River Corridors</a>
+    <nav aria-label="Site">
+      <a href="/opensource">Open source</a>
+      <a href="https://github.com/African-River-Corridors/open-report-designer">GitHub</a>
+    </nav>
+  </div>
+</header>
+<main>
+  <section class="page-head">
+    <div class="container">
+      <div class="title">
+        <img class="mark mark-light" src="/ord/assets/ord-mark.svg" alt="" width="72" height="72">
+        <img class="mark mark-dark" src="/ord/assets/ord-mark-dark.svg" alt="" width="72" height="72">
+        <div>
+          <span class="eyebrow">ARC open library</span>
+          <h1>Open Report Designer <span class="initials">(ORD)</span></h1>
+        </div>
+      </div>
+      <p class="lead">A report engine for open engineering tools. You give it one typed report document; it writes the same report as PDF, HTML and Word.</p>
+      <ul class="facts"><li>Status: <strong><span class="status">Under construction</span></strong></li><li>Language: <strong>Rust</strong></li><li>Licence: <strong>Apache 2.0</strong></li></ul>
+    </div>
+  </section>
+  <div class="container">
+<h2>What it will be</h2>
+<div class="prose">
+<p>ORD has no release yet. This is the design, from
+<a href="https://github.com/African-River-Corridors/open-report-designer/blob/main/docs/adr/0001-report-engine.md">ADR 0001</a> and
+<a href="https://github.com/African-River-Corridors/open-report-designer/blob/main/docs/specs/0001-report-engine.md">spec 0001</a>. This page
+changes to "what it is" when version 0.1 is released.</p>
+<ul>
+  <li><strong>One document, three writers.</strong> A report document (JSON, with a published schema) goes in.
+  PDF, HTML and Word come out, with the same structure and text.</li>
+  <li><strong>Pure Rust core.</strong> It opens no file and uses no network, so it can run in a command-line tool,
+  a desktop app, Python and the browser.</li>
+  <li><strong>Document control.</strong> Revision, date, prepared, checked, approved and status, with checks that
+  a document cannot claim a status its sign-offs do not support.</li>
+</ul>
+</div>
+
+<h2>Who will use it</h2>
+<div class="prose">
+<p><a href="/owd">Open Waterway Designer (OWD)</a> is the first planned user, for its screening report.</p>
+</div>
+    <h2>Links</h2>
+    <ul class="links"><li><a href="https://github.com/African-River-Corridors/open-report-designer">Code on GitHub</a></li><li><a href="https://github.com/African-River-Corridors/open-report-designer/blob/main/docs/adr/0001-report-engine.md">Design (ADR 0001)</a></li></ul>
+  </div>
+</main>
+<footer class="site-footer">
+  <div class="container">
+    <p>Hosted by African River Corridors. Code under the Apache License 2.0.
+    The names and marks follow the <a href="https://github.com/African-River-Corridors/open-report-designer/blob/main/TRADEMARKS.md">trademark policy</a>.</p>
+    <p>Set in Manrope and IBM Plex Mono (SIL Open Font License 1.1), served from this site.</p>
+  </div>
+</footer>
+</body>
+</html>

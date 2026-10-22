@@ -1,4 +1,10 @@
-# Open Report Designer (ORD)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="website/assets/ord-lockup-dark.svg">
+  <img alt="ORD, Open Report Designer: an ARC open library" src="website/assets/ord-lockup.svg" width="440">
+</picture>
+
+**One typed report document to PDF, HTML and Word.**
+[Docs page](https://www.africanrivercorridors.com/ord) · [Design (ADR 0001)](docs/adr/0001-report-engine.md)
 
 A report engine for open engineering tools. You give it one typed report document (JSON, with a published
 schema); it writes the same report as **PDF**, **HTML** and **Word**.
@@ -18,6 +24,6 @@ Status: under construction. The design is in [ADR 0001](docs/adr/0001-report-eng
 ## Licence
 
 Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE). The project names and logos are covered by
-[TRADEMARKS.md](TRADEMARKS.md).
+[TRADEMARKS.md](TRADEMARKS.md). The fonts under `website/fonts/` (SIL OFL 1.1) have their licences beside them.
 
 Hosted by African River Corridors.
