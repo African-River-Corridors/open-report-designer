@@ -1,0 +1,622 @@
+{
+  "$id": "https://github.com/African-River-Corridors/open-report-designer/blob/main/schema/ord-document.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Open Report Designer document",
+  "description": "A report document.",
+  "type": "object",
+  "properties": {
+    "ord": {
+      "description": "Format version. v0.1 accepts \"0.1\" only.",
+      "type": "string"
+    },
+    "class": {
+      "description": "A document class id from the register, such as \"report\".",
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "subtitle": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "organisation": {
+      "description": "Shown on the cover and in the footer.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "language": {
+      "description": "BCP 47 language tag. Default \"en\".",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "control": {
+      "$ref": "#/$defs/Control"
+    },
+    "summary": {
+      "description": "A short summary on the cover page (Markdown).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "notice": {
+      "description": "A notice on the cover and in the footer, such as \"Screening tool. Not for construction.\"",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "contents": {
+      "description": "Table of contents. Default from the document class.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "body": {
+      "description": "The main matter.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Block"
+      }
+    },
+    "appendices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Appendix"
+      }
+    },
+    "assets": {
+      "description": "Asset id to image.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/AssetSource"
+      }
+    },
+    "template": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TemplateOverrides"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "ord",
+    "class",
+    "title",
+    "control",
+    "body"
+  ],
+  "$defs": {
+    "Control": {
+      "description": "Document control (spec 0001 §3.2).",
+      "type": "object",
+      "properties": {
+        "number": {
+          "description": "The document number. Starts with \"<prefix>-\" when the class has a number prefix.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "description": "The revision: a letter (A, B, ...) while working, a number (0, 1, ...) once issued.",
+          "type": "string"
+        },
+        "date": {
+          "description": "ISO 8601 date, YYYY-MM-DD.",
+          "type": "string"
+        },
+        "status": {
+          "description": "A status of the class's lifecycle.",
+          "type": "string"
+        },
+        "sensitivity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sensitivity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prepared": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checked": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "approved": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "history": {
+          "description": "Earlier and current revisions, oldest first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HistoryEntry"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "date",
+        "status"
+      ]
+    },
+    "Sensitivity": {
+      "description": "Who may see the document.",
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ]
+    },
+    "HistoryEntry": {
+      "description": "One row of the revision history.",
+      "type": "object",
+      "properties": {
+        "revision": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "date",
+        "status",
+        "description"
+      ]
+    },
+    "Block": {
+      "description": "A block of the document (spec 0001 §3.3).\n\nRead by hand (`impl Deserialize` below) rather than by serde's internally tagged enum, which buffers the\nblock and so loses the path to an error inside it.",
+      "oneOf": [
+        {
+          "description": "A section. Nesting sets the heading level (at most four).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "section"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "type": "string"
+            },
+            "numbered": {
+              "description": "Default true. An unnumbered section takes no number, nor do its children.",
+              "type": "boolean"
+            },
+            "body": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Block"
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "title",
+            "body"
+          ]
+        },
+        {
+          "description": "Markdown prose (spec 0001 §6).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "prose"
+            },
+            "markdown": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "markdown"
+          ]
+        },
+        {
+          "description": "A table, numbered \"Table n\".",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "table"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "caption": {
+              "type": "string"
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Column"
+              }
+            },
+            "rows": {
+              "description": "One cell per column in every row. Cells are plain text.",
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "notes": {
+              "description": "Notes under the table (Markdown).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "caption",
+            "columns",
+            "rows"
+          ]
+        },
+        {
+          "description": "A figure, numbered \"Figure n\".",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "figure"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "caption": {
+              "type": "string"
+            },
+            "asset": {
+              "description": "An asset id.",
+              "type": "string"
+            },
+            "alt": {
+              "description": "Alt text. Required and not empty.",
+              "type": "string"
+            },
+            "width": {
+              "description": "A fraction of the text width, 0 < width <= 1. Default 1.",
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "caption",
+            "asset",
+            "alt"
+          ]
+        },
+        {
+          "description": "A map: a figure with a key line (coordinate system, scale, source). Numbered with the figures.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "map"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "caption": {
+              "type": "string"
+            },
+            "asset": {
+              "type": "string"
+            },
+            "alt": {
+              "type": "string"
+            },
+            "width": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "crs": {
+              "description": "The coordinate reference system, such as \"EPSG:32630\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "scale": {
+              "description": "The scale, such as \"1:25 000\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "attribution": {
+              "description": "The source of the map data.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "caption",
+            "asset",
+            "alt",
+            "attribution"
+          ]
+        },
+        {
+          "description": "A boxed panel that states the data a result rests on and the limits of the result.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "data_box"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "title": {
+              "description": "Default \"Data and limits\".",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/DataItem"
+              }
+            },
+            "notes": {
+              "description": "Notes under the items (Markdown).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "items"
+          ]
+        }
+      ]
+    },
+    "Column": {
+      "description": "A table column.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Align"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "description": "The unit, shown under the column title.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title"
+      ]
+    },
+    "Align": {
+      "description": "Horizontal alignment of a table column.",
+      "type": "string",
+      "enum": [
+        "left",
+        "centre",
+        "right"
+      ]
+    },
+    "DataItem": {
+      "description": "One line of a data box.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "value"
+      ]
+    },
+    "Appendix": {
+      "description": "An appendix: lettered A, B, ... (spec 0001 §5).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Block"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "body"
+      ]
+    },
+    "AssetSource": {
+      "description": "An image the document uses: inline as base64, or a path that the caller reads (spec 0001 §3.4).",
+      "type": "object",
+      "properties": {
+        "media_type": {
+          "$ref": "#/$defs/MediaType"
+        },
+        "base64": {
+          "description": "The image bytes, base64 (standard alphabet, padded).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "A path relative to the document file. The core never reads it; the caller supplies the bytes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "media_type"
+      ]
+    },
+    "MediaType": {
+      "description": "The image types the engine reads.",
+      "type": "string",
+      "enum": [
+        "image/svg+xml",
+        "image/png"
+      ]
+    },
+    "TemplateOverrides": {
+      "description": "Changes to the default template (spec 0001 §7).",
+      "type": "object",
+      "properties": {
+        "organisation_logo": {
+          "description": "An asset id for a logo on the cover.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paper": {
+          "description": "Colours as \"#rrggbb\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ink": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ink_2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accent_ground": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cover": {
+          "description": "Default true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
