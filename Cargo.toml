@@ -9,3 +9,11 @@ rust-version = "1.99"
 license = "Apache-2.0"
 repository = "https://github.com/African-River-Corridors/open-report-designer"
 publish = false
+
+# The WebAssembly package (tools/build_wasm.sh, issue #28): built for size. Native builds keep `release`.
+[profile.wasm]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
