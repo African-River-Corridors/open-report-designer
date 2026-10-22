@@ -290,5 +290,7 @@ fn each_status_carries_its_furniture() {
 fn the_example_raises_no_control_finding() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/screening-report.json");
     let d = ord::parse(&std::fs::read_to_string(path).unwrap()).unwrap();
-    assert!(ord::check(&d, &Default::default(), &ord::builtin_register()).is_empty());
+    // The assets are files, not read here, so only the image check (ORD011) may speak.
+    let f = ord::check(&d, &Default::default(), &ord::builtin_register());
+    assert!(f.iter().all(|f| f.code == "ORD011"), "{f:?}");
 }

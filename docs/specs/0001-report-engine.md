@@ -135,8 +135,9 @@ Before any writer runs, the core resolves the document:
 Prose is CommonMark with these parts: paragraphs, emphasis, strong, inline code, links, bullet and numbered
 lists (nested), block quotes, code blocks, hard breaks, and `[[#id]]` cross-references.
 
-- **No maths.** A `$` is always a literal dollar sign. "$5 and $10", "US$ 3", `\$` and `$x$` print as written
-  in every output. Each writer escapes `$` (Typst would otherwise start maths).
+- **No maths.** A `$` is always a literal dollar sign. "$5 and $10", "US$ 3", "$$ y $$" and `$x$` print as
+  written in every output, and `\$` prints `$` (a CommonMark escape). Each writer escapes `$` (Typst would
+  otherwise start maths).
 - Headings, tables, images and raw HTML in prose are refused by the checks (§8): structure belongs in typed
   blocks.
 - Every other character that is special in a writer's own syntax (Typst markup, HTML, XML) is escaped.

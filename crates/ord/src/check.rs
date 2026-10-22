@@ -4,15 +4,50 @@ use std::collections::BTreeSet;
 
 use crate::assets::Assets;
 use crate::finding::Finding;
-use crate::model::Document;
+use crate::model::{Block, Document};
 use crate::register::{Register, Status};
 
 /// Every check on a document, in a stable order.
 pub fn check(doc: &Document, assets: &Assets, register: &Register) -> Vec<Finding> {
-    let _ = assets;
     let mut out = Vec::new();
     control(doc, register, &mut out);
+    let (_, structural) = crate::resolve::resolve(doc, register);
+    out.extend(structural);
+    images(doc, assets, &mut out);
     out
+}
+
+/// Every figure and map names an asset that exists, has a supported type and is a valid image (ORD011).
+fn images(doc: &Document, assets: &Assets, out: &mut Vec<Finding>) {
+    fn walk(blocks: &[Block], path: &str, assets: &Assets, out: &mut Vec<Finding>) {
+        for (i, b) in blocks.iter().enumerate() {
+            let p = format!("{path}/{i}");
+            match b {
+                Block::Section(s) => walk(&s.body, &format!("{p}/body"), assets, out),
+                Block::Figure(f) => image(&f.asset, &format!("{p}/asset"), assets, out),
+                Block::Map(m) => image(&m.asset, &format!("{p}/asset"), assets, out),
+                _ => {}
+            }
+        }
+    }
+    walk(&doc.body, "/body", assets, out);
+    for (i, a) in doc.appendices.iter().enumerate() {
+        walk(&a.body, &format!("/appendices/{i}/body"), assets, out);
+    }
+}
+
+fn image(id: &str, path: &str, assets: &Assets, out: &mut Vec<Finding>) {
+    let Some(a) = assets.get(id) else {
+        out.push(Finding::error("ORD011", path, format!("no asset {id:?}")));
+        return;
+    };
+    if let Err(why) = crate::assets::validate(a) {
+        out.push(Finding::error(
+            "ORD011",
+            path,
+            format!("asset {id:?} is not a valid {}: {why}", a.media_type.as_str()),
+        ));
+    }
 }
 
 /// The document's class and status, resolved against the register. None when either is unknown.
