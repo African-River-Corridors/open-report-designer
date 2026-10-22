@@ -52,6 +52,8 @@ pub struct ControlView {
     pub checked: Option<String>,
     pub approved: Option<String>,
     pub history: Vec<model::HistoryEntry>,
+    /// Every status of the lifecycle, normalised id and alias to label, for the history table.
+    pub status_labels: BTreeMap<String, String>,
 }
 
 impl ControlView {
@@ -149,6 +151,16 @@ pub struct RColumn {
     pub title: String,
     pub unit: Option<String>,
     pub align: Align,
+}
+
+impl RColumn {
+    /// The header as printed: "Length (km)", or the title alone.
+    pub fn header(&self) -> String {
+        match &self.unit {
+            Some(u) => format!("{} ({u})", self.title),
+            None => self.title.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -304,6 +316,19 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
         checked: c.checked.clone(),
         approved: c.approved.clone(),
         history: c.history.clone(),
+        status_labels: class
+            .and_then(|c| register.lifecycle(&c.lifecycle))
+            .map(|l| {
+                let mut m: BTreeMap<String, String> =
+                    l.statuses.iter().map(|s| (s.id.clone(), s.label.clone())).collect();
+                for (alias, target) in &l.aliases {
+                    if let Some(s) = l.status(target) {
+                        m.insert(crate::register::normalise(alias), s.label.clone());
+                    }
+                }
+                m
+            })
+            .unwrap_or_default(),
     };
     let contents = doc.contents.unwrap_or_else(|| class.is_some_and(|c| c.contents));
     let resolved = Resolved {
