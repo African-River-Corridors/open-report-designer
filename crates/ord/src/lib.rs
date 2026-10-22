@@ -7,9 +7,11 @@ pub mod assets;
 pub mod check;
 pub mod finding;
 pub mod fonts;
+pub mod markdown;
 pub mod model;
 pub mod parse;
 pub mod register;
+pub mod resolve;
 pub mod schema;
 pub mod template;
 
@@ -19,6 +21,7 @@ pub use finding::{Finding, Severity};
 pub use model::Document;
 pub use parse::parse;
 pub use register::{Register, builtin_register};
+pub use resolve::{Resolved, resolve};
 pub use schema::schema;
 pub use template::Template;
 

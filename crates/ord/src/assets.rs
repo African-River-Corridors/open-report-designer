@@ -64,3 +64,50 @@ pub fn collect(doc: &Document, supplied: &BTreeMap<String, Vec<u8>>) -> (Assets,
     }
     (out, findings)
 }
+
+/// Checks that an asset's bytes are an image of its declared type: a PNG signature and header, or an SVG
+/// document (UTF-8 text whose root element is `svg`). Returns the image size in pixels when it is known.
+pub fn validate(a: &Asset) -> Result<Option<(u32, u32)>, String> {
+    match a.media_type {
+        MediaType::Png => png_size(&a.bytes).map(Some),
+        MediaType::Svg => {
+            let text = std::str::from_utf8(&a.bytes).map_err(|_| "not UTF-8 text".to_string())?;
+            let mut rest = text.trim_start_matches('\u{feff}').trim_start();
+            // Skip the XML declaration, comments and a doctype before the root element.
+            loop {
+                if let Some(r) = rest.strip_prefix("<?") {
+                    rest =
+                        r.split_once("?>").map(|(_, r)| r).ok_or("an unclosed XML declaration")?.trim_start();
+                } else if let Some(r) = rest.strip_prefix("<!--") {
+                    rest = r.split_once("-->").map(|(_, r)| r).ok_or("an unclosed comment")?.trim_start();
+                } else if let Some(r) = rest.strip_prefix("<!") {
+                    rest = r.split_once('>').map(|(_, r)| r).ok_or("an unclosed doctype")?.trim_start();
+                } else {
+                    break;
+                }
+            }
+            let root = rest.strip_prefix('<').ok_or("no root element")?;
+            let name: String =
+                root.chars().take_while(|c| !c.is_whitespace() && *c != '>' && *c != '/').collect();
+            if name == "svg" || name.ends_with(":svg") {
+                Ok(None)
+            } else {
+                Err(format!("the root element is <{name}>, not <svg>"))
+            }
+        }
+    }
+}
+
+/// The width and height in a PNG's header.
+pub fn png_size(b: &[u8]) -> Result<(u32, u32), String> {
+    const SIG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if b.len() < 24 || &b[..8] != SIG || &b[12..16] != b"IHDR" {
+        return Err("no PNG signature and header".into());
+    }
+    let w = u32::from_be_bytes([b[16], b[17], b[18], b[19]]);
+    let h = u32::from_be_bytes([b[20], b[21], b[22], b[23]]);
+    if w == 0 || h == 0 {
+        return Err("a PNG of zero size".into());
+    }
+    Ok((w, h))
+}

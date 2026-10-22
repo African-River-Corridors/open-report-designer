@@ -15,6 +15,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_path_to_error = "0.1"
 schemars = { version = "1", features = ["preserve_order"] }
 base64 = "0.22"
+pulldown-cmark = { version = "0.13", default-features = false }
 
 # Second readers for the tests: they are not the code under test.
 [dev-dependencies]
