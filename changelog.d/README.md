@@ -1,0 +1,12 @@
+# Changelog fragments
+
+A pull request does not edit `CHANGELOG.md`. It adds one small file here instead, so two pull requests
+never conflict over the changelog.
+
+Name the file `<id>.<kind>.md`:
+
+- `<id>` is the issue or pull request number, such as `294`. Use a short slug if there is neither.
+
+`python3 tools/changelog.py check` checks the files. At release time,
+`python3 tools/changelog.py release <version>` moves every entry into `CHANGELOG.md` under the new version
+and deletes the fragments.

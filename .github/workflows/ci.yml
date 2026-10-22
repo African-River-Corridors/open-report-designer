@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  # Pushes to main and tags only: a ticket branch is tested once, by its pull request, not twice.
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# A new push to a pull request cancels its older, now-stale run. Runs on main and tags are never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The Rust caches save from main only (`save-if`): a pull request's cache serves no other pull request, and
+# with every pull request saving its own, the repository's 10 GB cache limit evicts main's caches.
+permissions:
+  contents: read
+
+jobs:
+  # The gate (tools/gates.sh) in parallel parts. Each part sets GATES_STEPS (and the Rust part
+  # GATES_PARTITION), so the script still checks that every step it was given ran. The job named `test`
+  # below needs every part; branch protection requires it by that name.
+  gate-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Format, clippy, and the wasm32 build
+        env:
+          GATES_STEPS: fmt,clippy,wasm
+        run: bash tools/gates.sh
+
+  # The Rust tests in N hash partitions (cargo-nextest, pinned). The slowest tests run in nightly.yml
+  # instead; see docs/agents/slow-tests.md.
+  gate-rust:
+    name: gate-rust (${{ matrix.partition }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        partition: ["1/2", "2/2"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.100
+      - name: Rust tests, one partition (the doctests run in partition 1)
+        env:
+          GATES_STEPS: rust
+          GATES_PARTITION: ${{ matrix.partition }}
+        run: bash tools/gates.sh
+
+  gate-python:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install the Python test tools
+        run: python -m pip install -r requirements-dev.txt
+      - name: pytest (the tools, the workflows, and the bindings when they exist)
+        env:
+          GATES_STEPS: pytest
+          ORD_PYTHON: python
+        run: bash tools/gates.sh
+
+  # The required check. It passes only when every part of the gate passed: a failed, skipped or cancelled
+  # part fails it, and so does a missing or extra part.
+  test:
+    needs: [gate-lint, gate-python, gate-rust]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every part of the gate passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e '(keys == ["gate-lint", "gate-python", "gate-rust"]) and all(.[]; .result == "success")' >/dev/null \
+            || { echo "test: a part of the gate did not pass" >&2; exit 1; }
+
+  release-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Embargoed terms and local paths (tree)
+        run: python tools/release_guard.py
+      - name: Embargoed terms and local paths (history)
+        run: python tools/release_guard.py --history
+      - name: Changelog fragments are well formed
+        run: python tools/changelog.py check
+      - name: Secrets (gitleaks)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
+            | tar -xz gitleaks
+          ./gitleaks detect --source . --redact --verbose

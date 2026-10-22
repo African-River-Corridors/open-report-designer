@@ -1,0 +1,36 @@
+name: Nightly
+
+# Every Rust test, including the slow ones that the pull-request gate leaves out
+# (.config/nextest.toml, docs/agents/slow-tests.md). Nothing is skipped here.
+on:
+  # A change to the slow-test list or to this workflow runs the full suite once, on its pull request.
+  pull_request:
+    paths:
+      - .github/workflows/nightly.yml
+      - .config/nextest.toml
+  schedule:
+    - cron: "43 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  slow-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest@0.9.100
+      - name: Every Rust test (profile nightly)
+        env:
+          GATES_STEPS: rust
+          GATES_NEXTEST_PROFILE: nightly
+        run: bash tools/gates.sh

@@ -1,0 +1,20 @@
+# cargo-nextest profiles.
+#
+#   pr       the pull-request gate (tools/gates.sh): everything except the slow tests listed below.
+#   nightly  every test, slow ones included (.github/workflows/nightly.yml).
+#
+# A test moves to the slow list only by measured time, with one reason in docs/agents/slow-tests.md.
+# Nothing is deleted. A renamed test drops out of the list and so runs on pull requests again: the safe
+# direction. Local full run: GATES_NEXTEST_PROFILE=nightly GATES_STEPS=rust bash tools/gates.sh
+
+[profile.default]
+fail-fast = false
+
+[profile.pr]
+fail-fast = false
+# The slow list is empty: no test has been measured as slow yet.
+default-filter = 'all()'
+
+[profile.nightly]
+fail-fast = false
+slow-timeout = { period = "120s", terminate-after = 5 }

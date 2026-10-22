@@ -1,0 +1,11 @@
+target/
+__pycache__/
+*.pyc
+.venv/
+mutants.out/
+mutants.out.old/
+*.so
+*.dylib
+/dist/
+/out/
+node_modules/
