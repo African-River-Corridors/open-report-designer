@@ -16,9 +16,15 @@ serde_path_to_error = "0.1"
 schemars = { version = "1", features = ["preserve_order"] }
 base64 = "0.22"
 pulldown-cmark = { version = "0.13", default-features = false }
+# The Word writer: the zip (deflate and CRC-32) and the PNG fallback of an SVG, drawn with the bundled fonts
+# only (no system fonts, no files).
+miniz_oxide = "0.8"
+crc32fast = "1"
+resvg = { version = "0.47", default-features = false, features = ["text"] }
 
 # Second readers for the tests: they are not the code under test.
 [dev-dependencies]
 jsonschema = { version = "0.60", default-features = false }
 roxmltree = "0.21"
 ttf-parser = "0.25"
+zip = { version = "2", default-features = false, features = ["deflate"] }
