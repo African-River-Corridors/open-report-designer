@@ -47,7 +47,7 @@ first.
 | Job | On a pull request | On main | Other |
 |---|---|---|---|
 | CI `test` (needs `gate-lint`, `gate-rust` ×2, `gate-python`), `release-guard` | always | always | by hand |
-| Other CI jobs | only when their inputs change (`changes` job, path filter) | always | by hand |
+| CI `wasm` (the WebAssembly package against native) | `crates/**`, `examples/**`, the wasm tools, Cargo files, toolchain, `ci.yml` | always | by hand |
 | Nightly (every slow test) | its own files | – | daily, by hand |
 | CodeQL (`codeql.yml`, advanced setup) | never | always | weekly, by hand |
 

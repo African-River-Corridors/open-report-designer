@@ -19,6 +19,33 @@ permissions:
   contents: read
 
 jobs:
+  # Which parts of the tree a pull request changes. The jobs below that are not required run on a pull request
+  # only when their inputs change, and always on main, on a tag and by hand. The required checks (`test`,
+  # `release-guard`) never depend on this job and always run.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      wasm: ${{ steps.filter.outputs.wasm }}
+    steps:
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: |
+            wasm:
+              - "crates/**"
+              - "examples/**"
+              - "tools/build_wasm.sh"
+              - "tools/wasm_smoke.mjs"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              - ".github/workflows/ci.yml"
+
   # The gate (tools/gates.sh) in parallel parts. Each part sets GATES_STEPS (and the Rust part
   # GATES_PARTITION), so the script still checks that every step it was given ran. The job named `test`
   # below needs every part; branch protection requires it by that name.
@@ -121,3 +148,41 @@ jobs:
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz \
             | tar -xz gitleaks
           ./gitleaks detect --source . --redact --verbose
+
+  # The WebAssembly package (spec 0001 §11.4): built with the pinned wasm-bindgen, then a Node test renders the
+  # example in all three formats and compares each with the native program's output. Not a required check.
+  wasm:
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.wasm == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: The pinned wasm-bindgen version
+        id: wb
+        run: echo "version=$(sed -n 's/^wasm-bindgen = "=\([0-9.]*\)".*/\1/p' crates/ord-wasm/Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - name: wasm-bindgen CLI (cached)
+        id: cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/wasm-bindgen
+          key: wasm-bindgen-cli-${{ steps.wb.outputs.version }}-${{ runner.os }}
+      - name: Install wasm-bindgen CLI
+        if: steps.cli.outputs.cache-hit != 'true'
+        run: cargo install wasm-bindgen-cli --version "${{ steps.wb.outputs.version }}" --locked --force
+      - name: Build the package (the log gives its size)
+        run: bash tools/build_wasm.sh nodejs dist/wasm-nodejs
+      - name: The native outputs
+        run: |
+          cargo build --locked -p ord-cli
+          target/debug/ord render examples/screening-report.json --format all -o dist/native
+      - name: Render in wasm and compare with native
+        run: node tools/wasm_smoke.mjs dist/wasm-nodejs dist/native
