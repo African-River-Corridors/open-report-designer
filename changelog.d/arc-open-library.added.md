@@ -1,1 +1,0 @@
-- **The ARC open library look.** The ORD mark and lockup at the top of the README, and a docs page in `website/`, served at https://www.africanrivercorridors.com/ord once GitHub Pages is on. The `website` workflow checks its links and deploys it. `TRADEMARKS.md` now lists the Drawing Format Standard (DFS).
