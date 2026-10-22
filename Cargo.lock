@@ -1969,6 +1969,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ord-wasm"
+version = "0.0.0"
+dependencies = [
+ "js-sys",
+ "ord",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

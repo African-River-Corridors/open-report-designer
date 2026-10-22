@@ -1,0 +1,19 @@
+[package]
+name = "ord-wasm"
+description = "WebAssembly bindings of Open Report Designer, for web apps."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ord = { path = "../ord" }
+serde_json = "1"
+# Pinned: the wasm-bindgen CLI that builds the package must be this exact version (CI reads it from here).
+wasm-bindgen = "=0.2.129"
+js-sys = "0.3"
