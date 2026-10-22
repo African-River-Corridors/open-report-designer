@@ -1,0 +1,582 @@
+{
+  "ord": "0.1",
+  "class": "report",
+  "title": "Stress document: every block, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+  "subtitle": "Deep nesting, a long table and special characters",
+  "organisation": "Example organisation (fictional)",
+  "control": {
+    "number": "RPT-9999",
+    "revision": "C",
+    "date": "2026-10-22",
+    "status": "for-approval",
+    "sensitivity": "internal",
+    "prepared": "Author",
+    "checked": "Checker",
+    "history": [
+      {
+        "revision": "A",
+        "date": "2026-10-01",
+        "status": "draft",
+        "description": "First $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §"
+      },
+      {
+        "revision": "C",
+        "date": "2026-10-22",
+        "status": "for approval",
+        "description": "Second"
+      }
+    ]
+  },
+  "summary": "A summary with **strong**, *emphasis*, `code` and $5.",
+  "notice": "Fictional. Not for use.",
+  "body": [
+    {
+      "type": "section",
+      "id": "one",
+      "title": "Level one",
+      "body": [
+        {
+          "type": "prose",
+          "markdown": "Prose with $5 and $10, US$ 3, \\$7, $x$ and $$ y $$; <less & more>; \"quotes\" and 'apostrophes'; # hash; @at; [brackets]; ~tilde~; = equals; + plus; / slash; \\\\ backslash; { braces } % ^ |. See [[#deep]], [[#long]], [[#fig]], [[#map]], [[#box]] and [[#app-b]]."
+        },
+        {
+          "type": "prose",
+          "markdown": "- one\n- two with *emphasis*\n  1. nested first\n  2. nested second\n- three\n\n3. starts at three\n4. four\n\n> A quote with **strong** text.\n\n```\ncode block $ # * _ <x>\nsecond line\n```\n\nA [link](https://example.org) and a [bad link](javascript:void(0)).  \nAfter a hard break."
+        },
+        {
+          "type": "section",
+          "id": "two",
+          "title": "Level two",
+          "body": [
+            {
+              "type": "section",
+              "id": "three",
+              "title": "Level three",
+              "body": [
+                {
+                  "type": "section",
+                  "id": "deep",
+                  "title": "Level four, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+                  "body": [
+                    {
+                      "type": "prose",
+                      "markdown": "The deepest section."
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Unnumbered section",
+      "numbered": false,
+      "body": [
+        {
+          "type": "section",
+          "id": "child",
+          "title": "Unnumbered child",
+          "body": [
+            {
+              "type": "prose",
+              "markdown": "Children of an unnumbered section take no number."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "id": "tables",
+      "title": "Tables and figures",
+      "body": [
+        {
+          "type": "table",
+          "id": "long",
+          "caption": "A long table across pages, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+          "columns": [
+            {
+              "title": "Name"
+            },
+            {
+              "title": "Value",
+              "unit": "m",
+              "align": "right"
+            },
+            {
+              "title": "Count",
+              "align": "right"
+            },
+            {
+              "title": "Result $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+              "align": "centre"
+            }
+          ],
+          "rows": [
+            [
+              "Row 1",
+              "1.5",
+              "1 037",
+              "Passes"
+            ],
+            [
+              "Row 2",
+              "3.0",
+              "1 074",
+              "Passes"
+            ],
+            [
+              "Row 3",
+              "4.5",
+              "1 111",
+              "Fails"
+            ],
+            [
+              "Row 4",
+              "6.0",
+              "1 148",
+              "Passes"
+            ],
+            [
+              "Row 5",
+              "7.5",
+              "1 185",
+              "Passes"
+            ],
+            [
+              "Row 6",
+              "9.0",
+              "1 222",
+              "Fails"
+            ],
+            [
+              "Row 7",
+              "10.5",
+              "1 259",
+              "Passes"
+            ],
+            [
+              "Row 8",
+              "12.0",
+              "1 296",
+              "Passes"
+            ],
+            [
+              "Row 9",
+              "13.5",
+              "1 333",
+              "Fails"
+            ],
+            [
+              "Row 10",
+              "15.0",
+              "1 370",
+              "Passes"
+            ],
+            [
+              "Row 11",
+              "16.5",
+              "1 407",
+              "Passes"
+            ],
+            [
+              "Row 12",
+              "18.0",
+              "1 444",
+              "Fails"
+            ],
+            [
+              "Row 13",
+              "19.5",
+              "1 481",
+              "Passes"
+            ],
+            [
+              "Row 14",
+              "21.0",
+              "1 518",
+              "Passes"
+            ],
+            [
+              "Row 15",
+              "22.5",
+              "1 555",
+              "Fails"
+            ],
+            [
+              "Row 16",
+              "24.0",
+              "1 592",
+              "Passes"
+            ],
+            [
+              "Row 17",
+              "25.5",
+              "1 629",
+              "Passes"
+            ],
+            [
+              "Row 18",
+              "27.0",
+              "1 666",
+              "Fails"
+            ],
+            [
+              "Row 19",
+              "28.5",
+              "1 703",
+              "Passes"
+            ],
+            [
+              "Row 20",
+              "30.0",
+              "1 740",
+              "Passes"
+            ],
+            [
+              "Row 21",
+              "31.5",
+              "1 777",
+              "Fails"
+            ],
+            [
+              "Row 22",
+              "33.0",
+              "1 814",
+              "Passes"
+            ],
+            [
+              "Row 23",
+              "34.5",
+              "1 851",
+              "Passes"
+            ],
+            [
+              "Row 24",
+              "36.0",
+              "1 888",
+              "Fails"
+            ],
+            [
+              "Row 25",
+              "37.5",
+              "1 925",
+              "Passes"
+            ],
+            [
+              "Row 26",
+              "39.0",
+              "1 962",
+              "Passes"
+            ],
+            [
+              "Row 27",
+              "40.5",
+              "1 999",
+              "Fails"
+            ],
+            [
+              "Row 28",
+              "42.0",
+              "2 036",
+              "Passes"
+            ],
+            [
+              "Row 29",
+              "43.5",
+              "2 073",
+              "Passes"
+            ],
+            [
+              "Row 30",
+              "45.0",
+              "2 110",
+              "Fails"
+            ],
+            [
+              "Row 31",
+              "46.5",
+              "2 147",
+              "Passes"
+            ],
+            [
+              "Row 32",
+              "48.0",
+              "2 184",
+              "Passes"
+            ],
+            [
+              "Row 33",
+              "49.5",
+              "2 221",
+              "Fails"
+            ],
+            [
+              "Row 34",
+              "51.0",
+              "2 258",
+              "Passes"
+            ],
+            [
+              "Row 35",
+              "52.5",
+              "2 295",
+              "Passes"
+            ],
+            [
+              "Row 36",
+              "54.0",
+              "2 332",
+              "Fails"
+            ],
+            [
+              "Row 37",
+              "55.5",
+              "2 369",
+              "Passes"
+            ],
+            [
+              "Row 38",
+              "57.0",
+              "2 406",
+              "Passes"
+            ],
+            [
+              "Row 39",
+              "58.5",
+              "2 443",
+              "Fails"
+            ],
+            [
+              "Row 40",
+              "60.0",
+              "2 480",
+              "Passes"
+            ],
+            [
+              "Row 41",
+              "61.5",
+              "2 517",
+              "Passes"
+            ],
+            [
+              "Row 42",
+              "63.0",
+              "2 554",
+              "Fails"
+            ],
+            [
+              "Row 43",
+              "64.5",
+              "2 591",
+              "Passes"
+            ],
+            [
+              "Row 44",
+              "66.0",
+              "2 628",
+              "Passes"
+            ],
+            [
+              "Row 45",
+              "67.5",
+              "2 665",
+              "Fails"
+            ],
+            [
+              "Row 46",
+              "69.0",
+              "2 702",
+              "Passes"
+            ],
+            [
+              "Row 47",
+              "70.5",
+              "2 739",
+              "Passes"
+            ],
+            [
+              "Row 48",
+              "72.0",
+              "2 776",
+              "Fails"
+            ],
+            [
+              "Row 49",
+              "73.5",
+              "2 813",
+              "Passes"
+            ],
+            [
+              "Row 50",
+              "75.0",
+              "2 850",
+              "Passes"
+            ],
+            [
+              "Row 51",
+              "76.5",
+              "2 887",
+              "Fails"
+            ],
+            [
+              "Row 52",
+              "78.0",
+              "2 924",
+              "Passes"
+            ],
+            [
+              "Row 53",
+              "79.5",
+              "2 961",
+              "Passes"
+            ],
+            [
+              "Row 54",
+              "81.0",
+              "2 998",
+              "Fails"
+            ],
+            [
+              "Row 55",
+              "82.5",
+              "3 035",
+              "Passes"
+            ],
+            [
+              "Row 56",
+              "84.0",
+              "3 072",
+              "Passes"
+            ],
+            [
+              "Row 57",
+              "85.5",
+              "3 109",
+              "Fails"
+            ],
+            [
+              "Row 58",
+              "87.0",
+              "3 146",
+              "Passes"
+            ],
+            [
+              "Row 59",
+              "88.5",
+              "3 183",
+              "Passes"
+            ],
+            [
+              "Row 60",
+              "90.0",
+              "3 220",
+              "Fails"
+            ]
+          ],
+          "notes": "Notes with $5 and [[#one]]."
+        },
+        {
+          "type": "figure",
+          "id": "fig",
+          "caption": "A figure, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+          "asset": "svg",
+          "alt": "A drawing",
+          "width": 0.5
+        },
+        {
+          "type": "map",
+          "id": "map",
+          "caption": "A map",
+          "asset": "png",
+          "alt": "A map image",
+          "crs": "EPSG:4326",
+          "scale": "1:10 000",
+          "attribution": "Invented, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §"
+        },
+        {
+          "type": "data_box",
+          "id": "box",
+          "title": "Data and limits, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+          "items": [
+            {
+              "label": "Label $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+              "value": "Value $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §"
+            },
+            {
+              "label": "Second",
+              "value": "2"
+            }
+          ],
+          "notes": "Box notes with `code`."
+        },
+        {
+          "type": "data_box",
+          "items": [
+            {
+              "label": "Default title",
+              "value": "yes"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "appendices": [
+    {
+      "id": "app-a",
+      "title": "First appendix",
+      "body": [
+        {
+          "type": "section",
+          "title": "Inside",
+          "body": [
+            {
+              "type": "prose",
+              "markdown": "Appendix prose."
+            }
+          ]
+        },
+        {
+          "type": "table",
+          "caption": "Appendix table",
+          "columns": [
+            {
+              "title": "A"
+            }
+          ],
+          "rows": [
+            [
+              "1"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "app-b",
+      "title": "Second appendix, $5 and $10, US$ 3, <b>&amp; \"q\" 'a' # * _ ` [x] @y ~ = - + / \\ { } % ^ | §",
+      "body": [
+        {
+          "type": "figure",
+          "caption": "Appendix figure",
+          "asset": "png",
+          "alt": "Bars"
+        }
+      ]
+    }
+  ],
+  "assets": {
+    "svg": {
+      "media_type": "image/svg+xml",
+      "path": "../../../../examples/assets/long-section.svg"
+    },
+    "png": {
+      "media_type": "image/png",
+      "path": "../../../../examples/assets/option-key.png"
+    }
+  }
+}
