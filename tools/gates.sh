@@ -31,9 +31,11 @@ PY="${ORD_PYTHON:-python3}"
 ALL_STEPS="fmt,clippy,wasm,rust,pytest"
 STEPS="${GATES_STEPS:-$ALL_STEPS}"
 PARTITION="${GATES_PARTITION:-}"
-# Crates that the native steps leave out: each has its own step or job.
-NATIVE_EXCLUDE=()
-[ -d crates/ord-wasm ] && NATIVE_EXCLUDE+=(--exclude ord-wasm)
+# Crates that the native steps leave out: ord-wasm is built for wasm32 (the wasm step and its own CI job);
+# ord-py is a Python extension, tested by the pytest step through Python.
+LINT_EXCLUDE=()
+[ -d crates/ord-wasm ] && LINT_EXCLUDE+=(--exclude ord-wasm)
+NATIVE_EXCLUDE=("${LINT_EXCLUDE[@]+"${LINT_EXCLUDE[@]}"}")
 [ -d crates/ord-py ] && NATIVE_EXCLUDE+=(--exclude ord-py)
 
 EXPECTED_STEPS=0
@@ -58,7 +60,11 @@ if wants clippy || wants wasm; then cargo clippy --version >/dev/null 2>&1 || fa
 if wants wasm; then rustup target list --installed 2>/dev/null | grep -qx wasm32-unknown-unknown \
   || fail "the wasm32-unknown-unknown target is not installed (rustup target add wasm32-unknown-unknown)"; fi
 if wants rust; then cargo nextest --version >/dev/null 2>&1 || fail "cargo-nextest is not installed (cargo install cargo-nextest --locked)"; fi
-if wants pytest; then need "$PY"; "$PY" -c "import pytest, yaml" 2>/dev/null || fail "pytest and pyyaml are not importable by $PY (pip install -r requirements-dev.txt)"; fi
+if wants pytest; then
+  need "$PY"
+  "$PY" -c "import pytest, yaml" 2>/dev/null || fail "pytest and pyyaml are not importable by $PY (pip install -r requirements-dev.txt)"
+  [ -d crates/ord-py ] && { need maturin; need mktemp; }
+fi
 
 # "$@" runs inside `||`, so bash ignores `set -e` in it: a step that is a function returns non-zero itself.
 step() {
@@ -89,17 +95,24 @@ wasm_build() {
 }
 
 python_tests() {
-  # The bindings, when the crate exists, are built into the running Python first (maturin develop).
+  # The bindings: a wheel built by maturin and unpacked onto PYTHONPATH (no install, no virtual environment),
+  # and the native `ord` program, which the binding tests compare with (ORD_CLI).
+  local site="" cli=""
   if [ -d crates/ord-py ]; then
-    "$PY" -c "import maturin" 2>/dev/null || need maturin
-    (cd crates/ord-py && "$PY" -m maturin develop --locked --release -q) || return 1
+    local wheels
+    wheels="$(mktemp -d)"
+    site="$(mktemp -d)"
+    maturin build --locked -q -m crates/ord-py/Cargo.toml -i "$PY" -o "$wheels" || return 1
+    "$PY" -m zipfile -e "$wheels"/*.whl "$site" || return 1
+    cargo build --locked -q -p ord-cli || return 1
+    cli="$(cargo metadata --format-version 1 --no-deps | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')/debug/ord"
   fi
-  "$PY" -m pytest -q || return 1
+  PYTHONPATH="$site${PYTHONPATH:+:$PYTHONPATH}" ORD_CLI="$cli" "$PY" -m pytest -q || return 1
 }
 
 if wants fmt; then step "cargo fmt --check" cargo fmt --all --check; fi
 if wants clippy; then
-  step "clippy -D warnings" cargo clippy --locked --workspace ${NATIVE_EXCLUDE[@]+"${NATIVE_EXCLUDE[@]}"} --all-targets --all-features -- -D warnings
+  step "clippy -D warnings" cargo clippy --locked --workspace ${LINT_EXCLUDE[@]+"${LINT_EXCLUDE[@]}"} --all-targets --all-features -- -D warnings
 fi
 if wants wasm; then step "wasm32 build and clippy" wasm_build; fi
 if wants rust; then step "rust tests${PARTITION:+, partition $PARTITION}" rust_tests; fi
