@@ -3,6 +3,7 @@
 //! The engine is specified in `docs/specs/0001-report-engine.md` and decided in ADR 0001. This crate is the
 //! pure core: it opens no file, reads no clock and uses no network.
 
+pub mod assemble;
 pub mod assets;
 pub mod check;
 pub mod finding;
@@ -17,6 +18,7 @@ pub mod schema;
 pub mod template;
 pub mod write;
 
+pub use assemble::assemble;
 pub use assets::{Asset, Assets};
 pub use check::check;
 pub use finding::{Finding, Severity};

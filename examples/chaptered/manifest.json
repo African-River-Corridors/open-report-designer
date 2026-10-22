@@ -1,0 +1,20 @@
+{
+  "ord": "0.1",
+  "class": "technical-note",
+  "title": "Bend screening of an invented reach",
+  "organisation": "Example Waterways (a fictional consultancy)",
+  "control": {
+    "number": "TN-0007",
+    "revision": "B",
+    "date": "2026-10-20",
+    "status": "for-approval",
+    "prepared": "Screening engineer",
+    "checked": "Checking engineer"
+  },
+  "notice": "Screening tool. Not for construction.",
+  "assets": {
+    "key": { "media_type": "image/png", "path": "../assets/option-key.png" }
+  },
+  "chapters": ["purpose", "findings"],
+  "appendix_chapters": ["bend-list"]
+}

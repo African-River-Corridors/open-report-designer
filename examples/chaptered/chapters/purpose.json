@@ -1,0 +1,8 @@
+{
+  "id": "purpose",
+  "title": "Purpose",
+  "status": "agreed",
+  "body": [
+    { "type": "prose", "markdown": "This note is a worked example of assembly: each chapter is its own file, found by its id. The findings are in [[#findings]] and the bend list in [[#bend-list]]." }
+  ]
+}
