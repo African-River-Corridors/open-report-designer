@@ -1,0 +1,179 @@
+{
+  "ord": "0.1",
+  "class": "report",
+  "title": "Heron River navigation screening",
+  "subtitle": "Reach from km 12 to km 30",
+  "organisation": "Example Waterways (a fictional consultancy)",
+  "language": "en",
+  "control": {
+    "number": "RPT-0042",
+    "revision": "1",
+    "date": "2026-10-22",
+    "status": "issued",
+    "sensitivity": "public",
+    "prepared": "Screening engineer",
+    "checked": "Checking engineer",
+    "approved": "Project director",
+    "history": [
+      { "revision": "A", "date": "2026-10-01", "status": "draft", "description": "First draft for comment." },
+      { "revision": "B", "date": "2026-10-08", "status": "for-approval", "description": "Comments on the draft addressed." },
+      { "revision": "0", "date": "2026-10-15", "status": "issued", "description": "First issue." },
+      { "revision": "1", "date": "2026-10-22", "status": "issued", "description": "Option 3 added." }
+    ]
+  },
+  "summary": "Three design lines were screened through an invented reach of the Heron River. **Option 2** meets every check at the design vessel's draught. All numbers in this example are illustrative.",
+  "notice": "Screening tool. Not for construction.",
+  "body": [
+    {
+      "type": "section",
+      "id": "intro",
+      "title": "Introduction",
+      "body": [
+        {
+          "type": "prose",
+          "markdown": "This report screens design lines for a navigation channel through the reach. It is a worked example of an Open Report Designer document: every river, number and name in it is invented.\n\nThe method is in [[#method]], the results in [[#results]] and the data the results rest on in [[#data]]."
+        },
+        {
+          "type": "section",
+          "id": "scope",
+          "title": "Scope",
+          "body": [
+            {
+              "type": "prose",
+              "markdown": "The screening covers:\n\n- the plan of each design line;\n- the bend radii against the minimum radius;\n- the dredge volume below the design low water.\n\nIt does not cover bank protection, costs in detail, or the environment. A rate of $5 to $10 per cubic metre, or US$ 7 on average, is used only to rank the options."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "id": "method",
+      "title": "Method",
+      "body": [
+        {
+          "type": "prose",
+          "markdown": "Each option is a smooth line inside the river banks. Its bends are checked against the minimum radius, and its depth against the vessel's draught plus clearance. See [[#plan]] for the reach and [[#long-section]] for the bed.\n\n> Screening results rank options. They do not replace a design."
+        },
+        {
+          "type": "map",
+          "id": "plan",
+          "caption": "The reach and the design line of option 2",
+          "asset": "reach-plan",
+          "alt": "A plan of a meandering river with one smooth design line drawn along it",
+          "width": 0.9,
+          "crs": "A local grid (invented)",
+          "scale": "1:50 000",
+          "attribution": "Invented terrain, drawn for this example"
+        },
+        {
+          "type": "figure",
+          "id": "long-section",
+          "caption": "Bed level and the design channel bottom along the reach",
+          "asset": "long-section",
+          "alt": "A long section showing an uneven bed line above and below a straight dashed channel bottom",
+          "width": 0.9
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "id": "results",
+      "title": "Results",
+      "body": [
+        {
+          "type": "prose",
+          "markdown": "[[#options]] lists the three options. Option 2 has the largest smallest radius and the smallest dredge volume."
+        },
+        {
+          "type": "table",
+          "id": "options",
+          "caption": "The three options, screened",
+          "columns": [
+            { "title": "Option" },
+            { "title": "Length", "unit": "km", "align": "right" },
+            { "title": "Smallest radius", "unit": "m", "align": "right" },
+            { "title": "Dredge volume", "unit": "m³", "align": "right" },
+            { "title": "Result", "align": "centre" }
+          ],
+          "rows": [
+            ["Option 1", "18.4", "610", "412 000", "Fails"],
+            ["Option 2", "18.9", "940", "298 000", "Passes"],
+            ["Option 3", "19.6", "820", "355 000", "Passes"]
+          ],
+          "notes": "Minimum radius 800 m. Volumes are below the design low water."
+        },
+        {
+          "type": "figure",
+          "id": "key",
+          "caption": "The colours of the six option stages",
+          "asset": "option-key",
+          "alt": "A bar of six colour swatches",
+          "width": 0.4
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "id": "data",
+      "title": "Data and limits",
+      "body": [
+        {
+          "type": "data_box",
+          "id": "limits",
+          "items": [
+            { "label": "Terrain", "value": "Invented, 5 m grid" },
+            { "label": "Design vessel", "value": "Invented, draught 2.5 m" },
+            { "label": "Water level", "value": "Design low water, invented" },
+            { "label": "Coverage", "value": "The terrain covers 100 % of every option" }
+          ],
+          "notes": "Results are screening results. They are *not* for construction."
+        }
+      ]
+    }
+  ],
+  "appendices": [
+    {
+      "id": "rule-trace",
+      "title": "Rule trace",
+      "body": [
+        {
+          "type": "prose",
+          "markdown": "Each check, its rule and its result for option 2."
+        },
+        {
+          "type": "table",
+          "id": "trace",
+          "caption": "Checks of option 2",
+          "columns": [
+            { "title": "Check" },
+            { "title": "Rule" },
+            { "title": "Value", "align": "right" },
+            { "title": "Limit", "align": "right" },
+            { "title": "Result" }
+          ],
+          "rows": [
+            ["Bend radius", "Radius ≥ minimum", "940 m", "800 m", "Passes"],
+            ["Depth", "Depth ≥ draught + clearance", "3.4 m", "3.0 m", "Passes"],
+            ["Width", "Width ≥ 2 × beam + margins", "48 m", "45 m", "Passes"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "runs",
+      "title": "Run record",
+      "body": [
+        {
+          "type": "prose",
+          "markdown": "The screening ran with the settings below. The command was `screen --options 3 --reach km12-km30`."
+        }
+      ]
+    }
+  ],
+  "assets": {
+    "reach-plan": { "media_type": "image/svg+xml", "path": "assets/reach-plan.svg" },
+    "long-section": { "media_type": "image/svg+xml", "path": "assets/long-section.svg" },
+    "option-key": { "media_type": "image/png", "path": "assets/option-key.png" }
+  }
+}

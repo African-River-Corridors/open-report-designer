@@ -8,4 +8,14 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+# Pure: the core opens no file, reads no clock and uses no network (AGENTS.md).
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+serde_path_to_error = "0.1"
+schemars = { version = "1", features = ["preserve_order"] }
+base64 = "0.22"
+
+# Second readers for the tests: they are not the code under test.
+[dev-dependencies]
+jsonschema = { version = "0.60", default-features = false }
