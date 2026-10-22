@@ -20,4 +20,5 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # Second readers for the tests: they are not the code under test.
 [dev-dependencies]
 jsonschema = { version = "0.60", default-features = false }
+roxmltree = "0.21"
 ttf-parser = "0.25"
