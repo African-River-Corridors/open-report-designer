@@ -1,0 +1,23 @@
+[package]
+name = "ord-py"
+description = "Python bindings of Open Report Designer: the `ord_report` package's native core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+name = "_ord"
+crate-type = ["cdylib"]
+
+[dependencies]
+ord = { path = "../ord" }
+serde_json = "1"
+# abi3: one wheel per platform for every Python from 3.10.
+pyo3 = { version = "0.30", features = ["abi3-py310"] }
+
+[features]
+# maturin turns this on for wheels.
+extension-module = ["pyo3/extension-module"]

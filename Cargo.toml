@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ord", "crates/ord-cli"]
+members = ["crates/ord", "crates/ord-cli", "crates/ord-py"]
 
 [workspace.package]
 version = "0.0.0"
