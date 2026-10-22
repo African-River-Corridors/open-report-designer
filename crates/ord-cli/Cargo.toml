@@ -1,0 +1,21 @@
+[package]
+name = "ord-cli"
+description = "The ord command: render, check and assemble Open Report Designer documents."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ord"
+path = "src/main.rs"
+
+[dependencies]
+ord = { path = "../ord" }
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+serde_json = "1"

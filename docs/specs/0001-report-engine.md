@@ -231,7 +231,7 @@ All three writers are deterministic: the same input gives the same bytes.
 pub fn parse(json: &str) -> Result<Document, Vec<Finding>>;
 pub fn check(doc: &Document, assets: &Assets, register: &Register) -> Vec<Finding>;
 pub fn render(doc: &Document, assets: &Assets, register: &Register, format: Format) -> Result<Output, Vec<Finding>>;
-pub fn assemble(manifest: &Manifest, chapters: &[Chapter]) -> Result<Document, Vec<Finding>>;
+pub fn assemble(manifest: &Manifest, chapters: &[Chapter], register: &Register) -> Result<Document, Vec<Finding>>;
 pub fn schema() -> String;
 pub fn builtin_register() -> Register;
 ```

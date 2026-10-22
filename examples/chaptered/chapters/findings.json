@@ -1,0 +1,9 @@
+{
+  "id": "findings",
+  "title": "Findings",
+  "status": "review",
+  "body": [
+    { "type": "prose", "markdown": "Two of the five bends are tighter than the minimum radius of 800 m." },
+    { "type": "figure", "id": "key", "caption": "The option colours", "asset": "key", "alt": "Six colour swatches", "width": 0.4 }
+  ]
+}

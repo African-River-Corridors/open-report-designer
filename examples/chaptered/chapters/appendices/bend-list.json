@@ -1,0 +1,13 @@
+{
+  "id": "bend-list",
+  "title": "Bend list",
+  "status": "draft",
+  "body": [
+    {
+      "type": "table",
+      "caption": "The five bends",
+      "columns": [ { "title": "Bend" }, { "title": "Radius", "unit": "m", "align": "right" }, { "title": "Result" } ],
+      "rows": [ ["1", "1 200", "Passes"], ["2", "640", "Fails"], ["3", "910", "Passes"], ["4", "780", "Fails"], ["5", "1 050", "Passes"] ]
+    }
+  ]
+}
