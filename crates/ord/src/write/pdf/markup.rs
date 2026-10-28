@@ -742,7 +742,19 @@ impl W<'_> {
 
     fn table(&mut self, t: &RTable) {
         let aligns: Vec<Align> = t.columns.iter().map(|c| c.align).collect();
-        self.o.push_str("#block(width: 100%, above: 1.2em, below: 1.2em)[\n");
+        // With a line height (0.2), a table sits a paragraph gap under the text before it and one body line
+        // above the text after it, as the Word writer spaces it.
+        match (self.p.template.line_height, self.p.template.paragraph_spacing_pt) {
+            (Some(_), gap) => {
+                let _ = writeln!(
+                    self.o,
+                    "#block(width: 100%, above: {}pt, below: {}pt)[",
+                    num(f64::from(gap.unwrap_or(6.0))),
+                    num(self.p.template.body_size_pt.into())
+                );
+            }
+            _ => self.o.push_str("#block(width: 100%, above: 1.2em, below: 1.2em)[\n"),
+        }
         if let Some(caption) = t.caption_text() {
             let _ = writeln!(self.o, "#block(below: 0.5em, sticky: true)[#strong[{}]]", esc(&caption));
         }

@@ -355,8 +355,31 @@ impl<'a, 'p> Writer<'a, 'p> {
     }
 
     fn para(&mut self, ppr: &PPr, content: &str) {
-        let _ = write!(self.x, "<w:p>{}{content}</w:p>", ppr.xml());
+        let mut xml = ppr.xml();
+        // With a line height (0.2), a paragraph right after a table starts one body line below it, as the
+        // PDF leaves one body line under a table.
+        if self.after_table
+            && let Some(gap) = self.table_gap_twips()
+        {
+            let spacing = format!("<w:spacing w:before=\"{gap}\"/>");
+            xml = if xml.is_empty() {
+                format!("<w:pPr>{spacing}</w:pPr>")
+            } else if let Some(i) =
+                ["<w:ind ", "<w:jc ", "<w:sectPr"].iter().filter_map(|m| xml.find(m)).min()
+            {
+                format!("{}{spacing}{}", &xml[..i], &xml[i..])
+            } else {
+                xml.replacen("</w:pPr>", &format!("{spacing}</w:pPr>"), 1)
+            };
+        }
+        let _ = write!(self.x, "<w:p>{xml}{content}</w:p>");
         self.after_table = false;
+    }
+
+    /// The space under a table, twentieths of a point, when the template sets a line height (0.2).
+    fn table_gap_twips(&self) -> Option<u32> {
+        let t = &self.p.template;
+        t.line_height.map(|_| (t.body_size_pt * 20.0).round() as u32)
     }
 
     /// Text wrapped in the bookmark of an anchor, so cross-references can link to it.
@@ -390,9 +413,11 @@ impl<'a, 'p> Writer<'a, 'p> {
         let t = &self.p.template;
         let padding = if header { t.table_padding_mm } else { t.headless_padding_mm.or(t.table_padding_mm) };
         match padding {
+            // Word adds a row's 0.5 pt rule to its height and the PDF does not: the bottom margin gives it back.
             Some([y, x]) => format!(
-                "<w:tblCellMar><w:top w:w=\"{y}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{y}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar>",
+                "<w:tblCellMar><w:top w:w=\"{y}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{b}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar>",
                 y = twips(y),
+                b = twips(y).saturating_sub(10),
                 x = twips(x)
             ),
             None => String::new(),
@@ -980,32 +1005,36 @@ impl<'a, 'p> Writer<'a, 'p> {
     }
 
     fn table(&mut self, t: &RTable) {
-        match t.caption_text() {
-            Some(c) => {
-                let caption = self.bookmarked(&t.anchor, run(&c, ""));
-                self.para(&PPr::style("Caption"), &caption);
-            }
-            // No caption: the bookmark sits in an empty paragraph, so a cross-reference still lands here.
-            None => {
-                let mark = self.bookmarked(&t.anchor, String::new());
-                if !mark.is_empty() {
-                    self.before_table();
-                    self.para(&PPr::style("TableNote"), &mark);
-                }
-            }
+        // With no caption, the bookmark goes into the table's first cell (below), not an empty paragraph,
+        // which would add a line the PDF does not have.
+        if let Some(c) = t.caption_text() {
+            let caption = self.bookmarked(&t.anchor, run(&c, ""));
+            self.para(&PPr::style("Caption"), &caption);
         }
+        let mark = if t.caption_text().is_none() {
+            self.bookmarked(&t.anchor, String::new())
+        } else {
+            String::new()
+        };
         let n = t.columns.len().max(1);
         let widths = self.p.column_widths(t).unwrap_or_else(|| vec![1.0 / n as f64; n]);
         let aligns: Vec<Align> = t.columns.iter().map(|c| c.align).collect();
-        let rows: Vec<Vec<String>> = t
+        let mut rows: Vec<Vec<String>> = t
             .rows
             .iter()
             .map(|r| r.iter().map(|c| self.inlines(cell_inlines(c), Fmt::default())).collect())
             .collect();
+        let mut head: Vec<String> = t.columns.iter().map(|c| run(&c.header(), "")).collect();
+        if !mark.is_empty() {
+            match (t.header && t.groups.is_empty(), rows.first_mut().and_then(|r| r.first_mut())) {
+                (true, _) => head[0].insert_str(0, &mark),
+                (false, Some(cell)) => cell.insert_str(0, &mark),
+                (false, None) => {}
+            }
+        }
         if t.header && !t.groups.is_empty() {
             self.grouped_table(t, &widths, &rows, &aligns);
         } else {
-            let head: Vec<String> = t.columns.iter().map(|c| run(&c.header(), "")).collect();
             self.grid_table(&widths, t.header.then_some(head.as_slice()), &rows, &aligns, false);
         }
         if let Some(notes) = &t.notes {
