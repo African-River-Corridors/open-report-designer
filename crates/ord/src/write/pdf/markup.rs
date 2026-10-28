@@ -77,6 +77,17 @@ fn rgb(c: Colour) -> String {
     format!("rgb(\"{}\")", c.hex())
 }
 
+/// Text settings for lines `lh` times the size from baseline to baseline, each line box that tall with half
+/// the leading above and half below: how Word lays out a line of "exact" or "at least" spacing.
+fn line_box(lh: f64) -> String {
+    let half = (lh - 1.0) / 2.0;
+    format!(
+        "#set text(top-edge: {}em, bottom-edge: -{}em)\n#set par(leading: 0pt)",
+        num(0.8 + half),
+        num(0.2 + half)
+    )
+}
+
 /// A length in Typst: a finite number with a unit.
 fn num(x: f64) -> String {
     let x = if x.is_finite() { (x * 1000.0).round() / 1000.0 } else { 0.0 };
@@ -461,7 +472,7 @@ impl W<'_> {
         let d = &p.doc;
         let t = &p.template;
         let (ink, accent, card) = (rgb(t.cover_ink), rgb(t.cover_accent), rgb(t.card_ground));
-        let _ = writeln!(self.o, "#set text(fill: {ink}, top-edge: 0.8em, bottom-edge: -0.2em)");
+        let _ = writeln!(self.o, "#set text(fill: {ink})");
         let ruled = d.cover_image.is_some() && t.cover_image_rule_pt.is_some_and(|r| r > 0.0);
         if !ruled {
             let _ = writeln!(self.o, "#block(width: 14mm, height: 1.5pt, fill: {accent}, below: 5mm)[]");
@@ -470,9 +481,9 @@ impl W<'_> {
         let weight = if t.heading_bold { "bold" } else { "regular" };
         let _ = writeln!(
             self.o,
-            "#block(above: 0mm, below: {}mm)[#set par(leading: {}em)\n#text(font: {head}, weight: \"{weight}\", size: {}pt)[{}]]",
+            "#block(above: 0mm, below: {}mm)[{}\n#text(font: {head}, weight: \"{weight}\", size: {}pt)[{}]]",
             num(PHOTO.title_after_mm),
-            num(PHOTO.title_lh - 1.0),
+            line_box(PHOTO.title_lh),
             num(t.cover_title_pt.into()),
             esc(&d.title)
         );
@@ -481,8 +492,9 @@ impl W<'_> {
             let below = if i + 1 == lines.len() { PHOTO.meta_after_mm } else { 1.0 };
             let _ = writeln!(
                 self.o,
-                "#block(above: 0mm, below: {}mm)[#set par(leading: 0.35em)\n#text(size: {}pt, fill: {accent})[{}]]",
+                "#block(above: 0mm, below: {}mm)[{}\n#text(size: {}pt, fill: {accent})[{}]]",
                 num(below),
+                line_box(1.35),
                 num(PHOTO.meta_pt),
                 esc(line)
             );
@@ -493,15 +505,15 @@ impl W<'_> {
         if let Some(s) = &d.summary {
             let _ = writeln!(
                 self.o,
-                "#block(width: 100%, fill: {card}, radius: 1mm, inset: (x: {}mm, top: {}mm, bottom: {}mm), above: 0mm, below: {}mm)[#set text(fill: {}, size: {}pt)\n#set par(leading: {}em, spacing: {}mm)",
+                "#block(width: 100%, fill: {card}, radius: 1mm, inset: (x: {}mm, top: {}mm, bottom: {}mm), above: 0mm, below: {}mm)[#set text(fill: {}, size: {}pt)\n{}\n#set par(spacing: {}mm)",
                 num(PHOTO.card_pad_x_mm),
                 num(PHOTO.card_pad_top_mm),
                 num(PHOTO.card_pad_bottom_mm),
                 num(PHOTO.card_gap_mm),
                 rgb(t.ink),
                 num(PHOTO.card_text_pt),
-                num(PHOTO.card_lh - 1.0),
-                num(PHOTO.card_par_gap_mm + (PHOTO.card_lh - 1.0) * PHOTO.card_text_pt * 0.3528),
+                line_box(PHOTO.card_lh),
+                num(PHOTO.card_par_gap_mm),
             );
             self.md_blocks(s);
             self.o.push_str("]\n");
@@ -510,9 +522,10 @@ impl W<'_> {
             let n = d.cover_logos.len();
             let _ = writeln!(
                 self.o,
-                "#block(width: 100%, fill: {card}, radius: 1mm, inset: (x: 1mm, y: {}mm), above: 0mm, below: 0mm)[#set text(fill: {})\n#set par(leading: 0.25em)",
+                "#block(width: 100%, fill: {card}, radius: 1mm, inset: (x: 1mm, y: {}mm), above: 0mm, below: 0mm)[#set text(fill: {})\n{}",
                 num(PHOTO.logo_pad_y_mm),
-                rgb(t.ink)
+                rgb(t.ink),
+                line_box(1.25)
             );
             let _ = writeln!(
                 self.o,
@@ -559,8 +572,9 @@ impl W<'_> {
             let fill = t.cover_panel_ground.map(|c| format!(", fill: {}", rgb(c))).unwrap_or_default();
             let _ = writeln!(
                 self.o,
-                "#block(width: 100%, above: {}mm, below: 0mm, stroke: {line}, radius: 1mm, clip: true{fill})[#set par(leading: 0.3em)\n#table(columns: ({}%, 1fr), stroke: (bottom: {line}), inset: (x: {}mm, y: {}mm),",
+                "#block(width: 100%, above: {}mm, below: 0mm, stroke: {line}, radius: 1mm, clip: true{fill})[{}\n#table(columns: ({}%, 1fr), stroke: (bottom: {line}), inset: (x: {}mm, y: {}mm),",
                 num(PHOTO.panel_above_mm),
+                line_box(1.3),
                 num(PHOTO.panel_label_col * 100.0),
                 num(PHOTO.panel_pad_x_mm),
                 num(PHOTO.panel_pad_y_mm),
