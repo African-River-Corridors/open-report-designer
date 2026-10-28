@@ -127,9 +127,21 @@ fn photo_cover(p: &Prepared, h: &mut String) {
     if let Some((id, alt)) = &d.cover_image
         && let Some(a) = p.assets.get(id)
     {
-        let _ = writeln!(h, "<img class=\"band\" src=\"{}\" alt=\"{}\"/>", data_uri(a), esc(alt));
+        let _ = writeln!(
+            h,
+            "<img class=\"band\" src=\"{}\" alt=\"{}\" style=\"height: {}mm\"/>",
+            data_uri(a),
+            esc(alt),
+            crate::write::pdf::band_mm(p)
+        );
+        if let Some(r) = p.template.cover_image_rule_pt.filter(|r| *r > 0.0) {
+            let _ = writeln!(h, "<div class=\"band-rule\" style=\"height: {r}pt\"></div>");
+        }
     }
-    h.push_str("<div class=\"cover-body\">\n<div class=\"accent-rule\"></div>\n");
+    h.push_str("<div class=\"cover-body\">\n");
+    if !(d.cover_image.is_some() && p.template.cover_image_rule_pt.is_some_and(|r| r > 0.0)) {
+        h.push_str("<div class=\"accent-rule\"></div>\n");
+    }
     let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
     for line in [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten() {
         let _ = writeln!(h, "<p class=\"meta\">{}</p>", esc(line));
@@ -585,6 +597,33 @@ figcaption {{ font-weight: 700; text-align: left; margin-top: 0.4em; }}
     if !t.section_page_break {
         x.push_str("@media print { main > section { break-before: auto; } }\n");
     }
+    if let Some(lh) = t.line_height {
+        let _ = writeln!(x, "body {{ line-height: {lh}; }}");
+    }
+    if let Some(gap) = t.paragraph_spacing_pt {
+        let _ = writeln!(x, "p {{ margin: {gap}pt 0; }}");
+    }
+    if let Some(i) = t.list_indent_mm {
+        let _ = writeln!(x, "ul, ol {{ padding-left: {i}mm; }}");
+    }
+    if let Some(size) = t.table_size_pt {
+        let _ = writeln!(x, "table {{ font-size: {size}pt; }}");
+    }
+    if let Some([y, xx]) = t.table_padding_mm {
+        let _ = writeln!(x, "th, td {{ padding: {y}mm {xx}mm; }}");
+    }
+    if let Some(c) = t.table_stripe {
+        let _ = writeln!(x, "table:not(.headless) tbody tr:nth-child(even) {{ background: {c}; }}");
+    }
+    if crate::resolve::has_headless(&p.doc) {
+        let _ = writeln!(x, "table.headless td:first-child {{ color: {}; }}", t.ink_2);
+        if let Some([y, xx]) = t.headless_padding_mm {
+            let _ = writeln!(x, "table.headless td {{ padding: {y}mm {xx}mm; }}");
+        }
+        if let Some(size) = t.headless_size_pt {
+            let _ = writeln!(x, "table.headless {{ font-size: {size}pt; }}");
+        }
+    }
     if t.cover && t.cover_layout == CoverLayout::Photo {
         let _ = write!(
             x,
@@ -592,7 +631,8 @@ figcaption {{ font-weight: 700; text-align: left; margin-top: 0.4em; }}
 .cover.photo .band {{ display: block; width: 100%; height: {band}mm; object-fit: cover; }}
 .cover-body {{ padding: 2rem 2rem 0; }}
 .cover.photo .accent-rule {{ width: 14mm; height: 1.5pt; background: {caccent}; margin-bottom: 1.2rem; }}
-.cover.photo .doc-title {{ color: {cink}; font-weight: {hw}; }}
+.cover.photo .doc-title {{ color: {cink}; font-weight: {hw}; font-size: {title}pt; line-height: 1.14; }}
+.cover.photo .band-rule {{ background: {caccent}; }}
 .cover.photo .meta {{ color: {caccent}; font-size: 0.82em; margin: 0.3em 0; }}
 .cover .card {{ background: {card}; color: var(--ink); border-radius: 1.5mm; padding: 1rem 1.4rem; margin-top: 1rem; }}
 .cover .logos {{ display: flex; }}
@@ -612,7 +652,11 @@ table.cover-rows td {{ font-weight: 700; }}
             caccent = t.cover_accent,
             card = t.card_ground,
             band = t.cover_image_height_mm,
+            title = t.cover_title_pt,
         );
+        if let Some(c) = t.cover_panel_ground {
+            let _ = writeln!(x, "table.cover-rows {{ background: {c}; }}");
+        }
     }
     h.push_str(&x);
 }

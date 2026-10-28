@@ -252,8 +252,8 @@ fn the_photo_is_cropped_to_fill_its_band_in_word() {
     let (d, a) = photo();
     let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
     let body = docx_part(&docx, "word/document.xml").unwrap();
-    // A 1600 x 600 photograph in a 210 x 75 mm band: a little is cut from the top and bottom.
-    assert!(body.contains("<a:srcRect l=\"0\" t=\""), "no crop");
+    // A 1600 x 600 photograph in a band of another shape: it is cut to fill, not stretched.
+    assert!(body.contains("<a:srcRect "), "no crop");
     assert!(docx_part(&docx, "[Content_Types].xml").unwrap().contains("Extension=\"jpeg\""));
 }
 
@@ -267,4 +267,80 @@ fn word_asks_to_update_fields_only_for_a_table_of_contents() {
     let (d, a) = example();
     let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
     assert!(docx_part(&docx, "word/settings.xml").unwrap().contains("<w:updateFields w:val=\"true\"/>"));
+}
+
+fn photo_with(extra: serde_json::Value) -> (ord::Document, ord::Assets) {
+    let path = repo().join("examples/photo-cover-report.json");
+    let mut v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for (k, x) in extra.as_object().unwrap() {
+        v["template"][k] = x.clone();
+    }
+    // Asset paths are relative to the example's folder: write the copy there, under a name of its own
+    // (tests run at once in one process).
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let copy = path.with_file_name(format!("ord-photo-{}-{n}.json", std::process::id()));
+    std::fs::write(&copy, v.to_string()).unwrap();
+    let out = load(&copy);
+    std::fs::remove_file(&copy).unwrap();
+    out
+}
+
+#[test]
+fn a_filling_photograph_takes_what_the_content_leaves_the_same_in_word() {
+    let (d, a) = photo_with(serde_json::json!({
+        "cover_image_fill": true, "cover_image_min_mm": 30, "cover_image_height_mm": 200,
+        "cover_image_rule_pt": 2.25, "cover_title_pt": 29, "cover_panel_ground": "#1a2833"
+    }));
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    let band = ord::write::pdf::band_mm(&p);
+    assert!(band > 30.0 && band < 200.0, "{band}");
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    // The photograph's anchor in Word is the band the PDF uses (to the rounding of EMUs).
+    let photo = body.split("name=\"Photograph\"").next().unwrap();
+    let cy: f64 = photo
+        .rsplit("<wp:extent cx=\"")
+        .next()
+        .unwrap()
+        .split("cy=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!((cy / 36_000.0 - band).abs() < 0.05, "Word {} mm, PDF {band} mm", cy / 36_000.0);
+    // A rule along the photograph's foot replaces the short rule above the title.
+    assert!(body.contains("name=\"Rule\""));
+    assert!(ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).is_ok());
+}
+
+#[test]
+fn table_padding_stripes_and_line_height_reach_every_writer() {
+    let (d, a) = photo_with(serde_json::json!({
+        "table_stripe": "#f7f4ee", "table_padding_mm": [1.3, 2.1], "table_size_pt": 9.1,
+        "headless_padding_mm": [1.6, 2.6], "headless_size_pt": 9.4,
+        "line_height": 1.5, "paragraph_spacing_pt": 5.25, "list_indent_mm": 5.8
+    }));
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    let styles = docx_part(&docx, "word/styles.xml").unwrap();
+    assert!(body.contains("w:fill=\"F7F4EE\""), "no stripe");
+    assert!(
+        body.contains(&format!("<w:top w:w=\"{}\" w:type=\"dxa\"/>", (1.3f32 * 56.692_913).round() as u32))
+    );
+    assert!(
+        styles.contains(&format!(
+            "w:line=\"{}\" w:lineRule=\"atLeast\"",
+            (1.5f32 * 10.5 * 20.0).round() as u32
+        ))
+    );
+    assert!(styles.contains("TablePlain") && styles.contains("TableLabel"));
+    let html = String::from_utf8(ord::render(&d, &a, &ord::builtin_register(), Format::Html).unwrap().bytes)
+        .unwrap();
+    assert!(html.contains("tbody tr:nth-child(even) { background: #f7f4ee; }"));
+    assert!(html.contains("body { line-height: 1.5; }"));
+    assert!(ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).is_ok());
 }

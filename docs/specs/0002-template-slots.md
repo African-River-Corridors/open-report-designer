@@ -92,6 +92,19 @@ one-cell shaded tables and the cover section's own footer for Word; HTML element
 | `foot_sensitivity` | false | The sensitivity in capitals in the middle of the running foot. |
 | `table_widths` | none | `content`: every writer sizes columns by the rule of §6. Unset keeps each writer's 0.1 widths. |
 | `revision_prefix` | `Rev ` | The word before the revision in the running head and on the cover foot. |
+| `cover_image_fill` | false | The photograph takes the height the cover's content leaves, from `cover_image_min_mm` (38) to `cover_image_height_mm`, so the content sits at the foot. The core measures the content once with the PDF typesetter; every writer uses that height. |
+| `cover_image_rule_pt` | none | A rule of the accent along the foot of the photograph; it replaces the short rule above the title. |
+| `cover_title_pt` | 25 | The photo cover's title size. |
+| `cover_panel_ground` | none | The ground of the photo cover's control block. |
+| `line_height` | none | Baseline to baseline, in multiples of the size. Every line box is that tall, half the leading above and half below (as CSS and Word's "at least" spacing), so a one-line table row is as tall in every writer. Headings stay single. |
+| `paragraph_spacing_pt` | none | The space between paragraphs. |
+| `list_indent_mm` | none | The indent of each list level. |
+| `table_size_pt`, `table_padding_mm` | none | Table text size; cell padding `[top and bottom, left and right]`. |
+| `headless_size_pt`, `headless_padding_mm` | none | The same, for a table with no header row (its first column is in `ink_2`). |
+| `table_stripe` | none | The ground of every second body row of a table with a header row. |
+
+The photo cover's own measurements (title line height, card padding and gaps, logo sizes, the control
+block's padding and sizes, the foot size) are one table in the core, `render::PHOTO`, read by every writer.
 
 When the document has a `footer` or the template sets `foot_sensitivity`, the running foot is three columns of
 40, 20 and 40 per cent (text, sensitivity, "Page n of N") in every writer, so a long text wraps in its own

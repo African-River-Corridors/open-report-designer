@@ -120,6 +120,19 @@ pub struct Template {
     pub content_widths: bool,
     /// The word before the revision in the running head and on the cover foot.
     pub revision_prefix: Cow<'static, str>,
+    pub cover_image_fill: bool,
+    pub cover_image_min_mm: f32,
+    pub cover_image_rule_pt: Option<f32>,
+    pub cover_title_pt: f32,
+    pub cover_panel_ground: Option<Colour>,
+    pub table_size_pt: Option<f32>,
+    pub table_padding_mm: Option<[f32; 2]>,
+    pub headless_padding_mm: Option<[f32; 2]>,
+    pub headless_size_pt: Option<f32>,
+    pub table_stripe: Option<Colour>,
+    pub line_height: Option<f32>,
+    pub paragraph_spacing_pt: Option<f32>,
+    pub list_indent_mm: Option<f32>,
 }
 
 /// The default template: the look of Open Waterway Designer (spec 0001 §7). The one table of its values.
@@ -163,6 +176,19 @@ pub const DEFAULT: Template = Template {
     foot_sensitivity: false,
     content_widths: false,
     revision_prefix: Cow::Borrowed("Rev "),
+    cover_image_fill: false,
+    cover_image_min_mm: 38.0,
+    cover_image_rule_pt: None,
+    cover_title_pt: 25.0,
+    cover_panel_ground: None,
+    table_size_pt: None,
+    table_padding_mm: None,
+    headless_padding_mm: None,
+    headless_size_pt: None,
+    table_stripe: None,
+    line_height: None,
+    paragraph_spacing_pt: None,
+    list_indent_mm: None,
 };
 
 /// The default families.
@@ -222,6 +248,15 @@ impl Template {
         if let Some(c) = colour("heading_rule", &o.heading_rule) {
             t.heading_rule = Some(c);
         }
+        if let Some(c) = colour("cover_panel_ground", &o.cover_panel_ground) {
+            t.cover_panel_ground = Some(c);
+        }
+        if let Some(c) = colour("table_stripe", &o.table_stripe) {
+            t.table_stripe = Some(c);
+        }
+        if let Some(v) = o.cover_image_fill {
+            t.cover_image_fill = v;
+        }
         if let Some(v) = o.cover_layout {
             t.cover_layout = v;
         }
@@ -273,6 +308,58 @@ impl Template {
             && length("body_size_pt", v, 6.0, 16.0)
         {
             t.body_size_pt = v;
+        }
+        if let Some(v) = o.cover_image_min_mm
+            && length("cover_image_min_mm", v, 10.0, 200.0)
+        {
+            t.cover_image_min_mm = v;
+        }
+        if let Some(v) = o.cover_image_rule_pt
+            && length("cover_image_rule_pt", v, 0.0, 10.0)
+        {
+            t.cover_image_rule_pt = Some(v);
+        }
+        if let Some(v) = o.cover_title_pt
+            && length("cover_title_pt", v, 10.0, 60.0)
+        {
+            t.cover_title_pt = v;
+        }
+        if let Some(v) = o.table_size_pt
+            && length("table_size_pt", v, 6.0, 16.0)
+        {
+            t.table_size_pt = Some(v);
+        }
+        if let Some([y, x]) = o.table_padding_mm
+            && length("table_padding_mm", y, 0.0, 10.0)
+            && length("table_padding_mm", x, 0.0, 10.0)
+        {
+            t.table_padding_mm = Some([y, x]);
+        }
+        if let Some([y, x]) = o.headless_padding_mm
+            && length("headless_padding_mm", y, 0.0, 10.0)
+            && length("headless_padding_mm", x, 0.0, 10.0)
+        {
+            t.headless_padding_mm = Some([y, x]);
+        }
+        if let Some(v) = o.headless_size_pt
+            && length("headless_size_pt", v, 6.0, 16.0)
+        {
+            t.headless_size_pt = Some(v);
+        }
+        if let Some(v) = o.line_height
+            && length("line_height", v, 1.0, 3.0)
+        {
+            t.line_height = Some(v);
+        }
+        if let Some(v) = o.paragraph_spacing_pt
+            && length("paragraph_spacing_pt", v, 0.0, 30.0)
+        {
+            t.paragraph_spacing_pt = Some(v);
+        }
+        if let Some(v) = o.list_indent_mm
+            && length("list_indent_mm", v, 2.0, 20.0)
+        {
+            t.list_indent_mm = Some(v);
         }
         if let Some(sizes) = o.heading_sizes_pt
             && sizes.iter().all(|&v| length("heading_sizes_pt", v, 6.0, 48.0))

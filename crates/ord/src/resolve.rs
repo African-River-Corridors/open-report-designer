@@ -181,6 +181,18 @@ impl RTable {
     }
 }
 
+/// True when the document holds a table with no header row: its label column has a look of its own.
+pub fn has_headless(d: &Resolved) -> bool {
+    fn walk(bs: &[RBlock]) -> bool {
+        bs.iter().any(|b| match b {
+            RBlock::Table(t) => !t.header,
+            RBlock::Section(s) => walk(&s.body),
+            _ => false,
+        })
+    }
+    walk(&d.body) || d.appendices.iter().any(|a| walk(&a.body))
+}
+
 /// The inlines of a resolved cell (empty for an empty cell).
 pub fn cell_inlines(cell: &[MdBlock]) -> &[Inline] {
     match cell.first() {

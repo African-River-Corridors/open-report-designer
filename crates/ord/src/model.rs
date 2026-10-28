@@ -532,6 +532,46 @@ pub struct TemplateOverrides {
     /// The word before the revision in the running head and on the cover foot. Default "Rev ".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revision_prefix: Option<String>,
+    /// Photo cover: the photograph grows to take the height the cover's content leaves, between
+    /// `cover_image_min_mm` and `cover_image_height_mm`, so the content sits at the foot. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_fill: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_min_mm: Option<f32>,
+    /// Photo cover: a rule of the accent along the foot of the photograph, points. It replaces the short
+    /// rule above the title. Default none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_rule_pt: Option<f32>,
+    /// Photo cover: the title size, points. Default 25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_title_pt: Option<f32>,
+    /// Photo cover: the ground of the control block. Default none (the cover paper shows through).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_panel_ground: Option<String>,
+    /// Table text size, points. Default the body size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_size_pt: Option<f32>,
+    /// Table cell padding, millimetres: [top and bottom, left and right].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_padding_mm: Option<[f32; 2]>,
+    /// A table with no header row (labels and values): its cell padding [top and bottom, left and right],
+    /// millimetres, and its text size, points. Default those of the other tables.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless_padding_mm: Option<[f32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless_size_pt: Option<f32>,
+    /// The ground of every second body row of a table with a header row. Default none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_stripe: Option<String>,
+    /// The distance from one line of body text to the next, in multiples of the text size (such as 1.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<f32>,
+    /// The space between paragraphs, points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph_spacing_pt: Option<f32>,
+    /// The indent of each list level, millimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_indent_mm: Option<f32>,
 }
 
 /// How table columns are sized (0.2).

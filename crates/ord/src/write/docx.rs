@@ -23,7 +23,7 @@ use std::fmt::Write as _;
 use crate::finding::Finding;
 use crate::markdown::{Inline, MdBlock};
 use crate::model::{Align, CoverLayout, MediaType};
-use crate::render::{CONTROL, PAGE_OF, Prepared};
+use crate::render::{CONTROL, PAGE_OF, PHOTO, Prepared};
 use crate::resolve::{ControlView, RBlock, RDataBox, RFigure, RTable, cell_inlines};
 
 use parts::{DECL, REL};
@@ -380,6 +380,35 @@ impl<'a, 'p> Writer<'a, 'p> {
         }
     }
 
+    /// The cell margins of a report table when the template sets a padding (0.2), else nothing (the style's).
+    fn cell_margins(&self) -> String {
+        self.cell_margins_for(true)
+    }
+
+    /// `cell_margins` for a table with or without a header row.
+    fn cell_margins_for(&self, header: bool) -> String {
+        let t = &self.p.template;
+        let padding = if header { t.table_padding_mm } else { t.headless_padding_mm.or(t.table_padding_mm) };
+        match padding {
+            Some([y, x]) => format!(
+                "<w:tblCellMar><w:top w:w=\"{y}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{y}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar>",
+                y = twips(y),
+                x = twips(x)
+            ),
+            None => String::new(),
+        }
+    }
+
+    /// The shading of a body row: the stripe on every second row of a table with a header row (0.2).
+    fn stripe(&self, row: usize, header: bool) -> String {
+        match self.p.template.table_stripe {
+            Some(c) if header && row % 2 == 1 => {
+                format!("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{}\"/>", parts::hex(c))
+            }
+            _ => String::new(),
+        }
+    }
+
     /// The style of a table's header cells: "TableHead" when the template gives the head its own ink.
     fn head_style(&self) -> &'static str {
         let t = &self.p.template;
@@ -609,8 +638,10 @@ impl<'a, 'p> Writer<'a, 'p> {
         let tw = twips(self.text_width_mm() as f32);
         let cols: Vec<u32> = widths.iter().map(|f| (f64::from(tw) * f).round() as u32).collect();
         self.before_table();
-        self.x.push_str(
-            "<w:tbl><w:tblPr><w:tblStyle w:val=\"ReportTable\"/><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblLook w:val=\"0000\" w:firstRow=\"0\" w:lastRow=\"0\" w:firstColumn=\"0\" w:lastColumn=\"0\" w:noHBand=\"1\" w:noVBand=\"1\"/></w:tblPr><w:tblGrid>",
+        let _ = write!(
+            self.x,
+            "<w:tbl><w:tblPr><w:tblStyle w:val=\"ReportTable\"/><w:tblW w:w=\"5000\" w:type=\"pct\"/>{}<w:tblLook w:val=\"0000\" w:firstRow=\"0\" w:lastRow=\"0\" w:firstColumn=\"0\" w:lastColumn=\"0\" w:noHBand=\"1\" w:noVBand=\"1\"/></w:tblPr><w:tblGrid>",
+            if label_column { String::new() } else { self.cell_margins_for(head.is_some()) }
         );
         for c in &cols {
             let _ = write!(self.x, "<w:gridCol w:w=\"{c}\"/>");
@@ -636,13 +667,20 @@ impl<'a, 'p> Writer<'a, 'p> {
             }
             self.x.push_str("</w:tr>");
         }
-        for row in rows {
+        for (r, row) in rows.iter().enumerate() {
             self.x.push_str("<w:tr><w:trPr><w:cantSplit/></w:trPr>");
+            let shd = if label_column { String::new() } else { self.stripe(r, head.is_some()) };
             for (i, cell) in row.iter().enumerate() {
-                let style = if label_column && i == 0 { "TableHeader" } else { "TableText" };
+                let style = match (label_column, head.is_some(), i) {
+                    (true, _, 0) => "TableHeader",
+                    // A table with no header row is labels and values (0.2).
+                    (false, false, 0) => "TableLabel",
+                    (false, false, _) => "TablePlain",
+                    _ => "TableText",
+                };
                 let _ = write!(
                     self.x,
-                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"{style}\"/>{}</w:pPr>{cell}</w:p></w:tc>",
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"{style}\"/>{}</w:pPr>{cell}</w:p></w:tc>",
                     cols.get(i).copied().unwrap_or(0),
                     jc(i),
                 );
@@ -673,8 +711,10 @@ impl<'a, 'p> Writer<'a, 'p> {
             )
         };
         self.before_table();
-        self.x.push_str(
-            "<w:tbl><w:tblPr><w:tblStyle w:val=\"ReportTable\"/><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblLook w:val=\"0000\" w:firstRow=\"0\" w:lastRow=\"0\" w:firstColumn=\"0\" w:lastColumn=\"0\" w:noHBand=\"1\" w:noVBand=\"1\"/></w:tblPr><w:tblGrid>",
+        let _ = write!(
+            self.x,
+            "<w:tbl><w:tblPr><w:tblStyle w:val=\"ReportTable\"/><w:tblW w:w=\"5000\" w:type=\"pct\"/>{}<w:tblLook w:val=\"0000\" w:firstRow=\"0\" w:lastRow=\"0\" w:firstColumn=\"0\" w:lastColumn=\"0\" w:noHBand=\"1\" w:noVBand=\"1\"/></w:tblPr><w:tblGrid>",
+            self.cell_margins()
         );
         for c in &cols {
             let _ = write!(self.x, "<w:gridCol w:w=\"{c}\"/>");
@@ -710,12 +750,13 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x.push_str(&x);
         }
         self.x.push_str("</w:tr>");
-        for row in rows {
+        for (r, row) in rows.iter().enumerate() {
             self.x.push_str("<w:tr><w:trPr><w:cantSplit/></w:trPr>");
+            let shd = self.stripe(r, true);
             for (j, content) in row.iter().enumerate() {
                 let _ = write!(
                     self.x,
-                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"TableText\"/>{}</w:pPr>{content}</w:p></w:tc>",
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"TableText\"/>{}</w:pPr>{content}</w:p></w:tc>",
                     cols.get(j).copied().unwrap_or(0),
                     jc(aligns.get(j).copied().unwrap_or_default()),
                 );
@@ -737,17 +778,20 @@ impl<'a, 'p> Writer<'a, 'p> {
         self.after_table = false;
     }
 
-    /// A one-cell table on a ground, for a card of the photo cover: `body` is written inside it.
+    /// A one-cell table on a ground, for a card of the photo cover: `body` is written inside it, with the
+    /// card padding of `PHOTO` (the bottom less the last paragraph's own space after).
     fn card(&mut self, ground: &str, body: impl FnOnce(&mut Self)) {
+        let ph = PHOTO;
         let tw = twips(self.text_width_mm() as f32);
         let _ = write!(
             self.x,
             "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>\
-             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m5}\" w:type=\"dxa\"/><w:left w:w=\"{m6}\" w:type=\"dxa\"/><w:bottom w:w=\"{m5}\" w:type=\"dxa\"/><w:right w:w=\"{m6}\" w:type=\"dxa\"/></w:tblCellMar>\
+             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{top}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{bottom}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar>\
              <w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"{tw}\"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{tw}\" w:type=\"dxa\"/>\
              <w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/></w:tcPr>",
-            m5 = twips(5.0),
-            m6 = twips(6.0),
+            top = twips(ph.card_pad_top_mm as f32),
+            bottom = twips((ph.card_pad_bottom_mm - ph.card_par_gap_mm).max(0.5) as f32),
+            x = twips(ph.card_pad_x_mm as f32),
         );
         let before = self.x.len();
         body(self);
@@ -758,21 +802,24 @@ impl<'a, 'p> Writer<'a, 'p> {
         self.after_table = true;
     }
 
-    /// The photo cover (spec 0002 §4), laid out as the PDF writer lays it out: the cover paper behind the
-    /// page, the photograph across its head, an accent rule, the title, the meta lines, the summary card,
-    /// the logo card and the control block. The foot is the cover section's own footer.
+    /// The photo cover (spec 0002 §4), laid out as the PDF writer lays it out, from the same `PHOTO`
+    /// measurements and the same photograph height (`pdf::band_mm`): the cover paper behind the page, the
+    /// photograph across its head (with the accent rule along its foot), the title block, the cards and the
+    /// control block. The foot is the cover section's own footer.
     fn photo_cover(&mut self) {
         let p = self.p;
         let d = &p.doc;
         let t = &p.template;
-        let (pw, ph) = (f64::from(t.page_width_mm), f64::from(t.page_height_mm));
+        let ph = PHOTO;
+        let (pw, pg_h) = (f64::from(t.page_width_mm), f64::from(t.page_height_mm));
         self.cover_footer_rid = Some(self.rel("footer", "footer2.xml", false));
-        let band = f64::from(t.cover_image_height_mm);
+        let band = crate::write::pdf::band_mm(p);
         let mut anchors = {
             let rid = self.media_part("png", image::pixel_png(t.paper));
             let pic = Pic { png: rid, svg: None, aspect: 1.0 };
-            self.anchor_page(&pic, emu(pw), emu(ph), 0, true, None)
+            self.anchor_page(&pic, emu(pw), emu(pg_h), 0, true, None)
         };
+        let rule = t.cover_image_rule_pt.unwrap_or(0.0);
         let has_image = if let Some((id, alt)) = d.cover_image.clone()
             && let Some(pic) = self.pic(&id)
         {
@@ -788,56 +835,82 @@ impl<'a, 'p> Writer<'a, 'p> {
                 (0, cut)
             };
             anchors.push_str(&self.anchor_page(&pic, emu(pw), emu(band), 1, true, Some((crop, alt))));
+            if rule > 0.0 {
+                let rid = self.media_part("png", image::pixel_png(t.cover_accent));
+                let bar = Pic { png: rid, svg: None, aspect: 1.0 };
+                anchors.push_str(&self.anchor_at(&bar, emu(pw), emu(f64::from(rule) * 0.3528), emu(band), 2));
+            }
             true
         } else {
             false
         };
-        // The text starts 12 mm under the band (or at the top margin with no photograph).
-        let top = if has_image { band + 12.0 - f64::from(t.margin_top_mm) } else { 0.5 };
+        // The text starts `gap_mm` under the band (or at the top margin with no photograph).
+        let top = if has_image { band + ph.gap_mm - f64::from(t.margin_top_mm) } else { 0.5 };
         self.spacer(top, &anchors);
-        // The accent rule: a 14 mm by 1.5 pt bar.
-        let bar = {
-            let rid = self.media_part("png", image::pixel_png(t.cover_accent));
-            let pic = Pic { png: rid, svg: None, aspect: 1.0 };
-            self.inline(&pic, emu(14.0), emu(0.53), "Rule", "")
-        };
-        self.spacer(5.5, &bar);
+        if !(has_image && rule > 0.0) {
+            // The short accent rule above the title: 14 mm by 1.5 pt.
+            let bar = {
+                let rid = self.media_part("png", image::pixel_png(t.cover_accent));
+                let pic = Pic { png: rid, svg: None, aspect: 1.0 };
+                self.inline(&pic, emu(14.0), emu(0.53), "Rule", "")
+            };
+            self.spacer(5.5, &bar);
+        }
         self.para(&PPr::style("CoverTitle"), &run(&d.title, ""));
-        for line in [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten() {
-            self.para(&PPr::style("CoverMeta"), &run(line, ""));
+        let lines: Vec<String> =
+            [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten().cloned().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let last = i + 1 == lines.len();
+            let content = run(line, "");
+            if last {
+                let _ = write!(
+                    self.x,
+                    "<w:p><w:pPr><w:pStyle w:val=\"CoverMeta\"/><w:spacing w:after=\"{}\"/></w:pPr>{content}</w:p>",
+                    twips(ph.meta_after_mm as f32)
+                );
+                self.after_table = false;
+            } else {
+                self.para(&PPr::style("CoverMeta"), &content);
+            }
+        }
+        if lines.is_empty() {
+            self.spacer(ph.meta_after_mm - ph.title_after_mm, "");
         }
         let card = parts::hex(t.card_ground);
         if let Some(s) = d.summary.clone() {
-            self.spacer(4.0, "");
             self.card(&card, |w| w.md_blocks(&s, Ctx { style: "CardText", depth: 0 }));
+            self.spacer(ph.card_gap_mm, "");
         }
         if !d.cover_logos.is_empty() {
-            self.spacer(5.0, "");
             self.logo_card(&card);
         }
         let rows = p.cover_rows();
         if !rows.is_empty() {
-            self.spacer(6.0, "");
+            self.spacer(ph.panel_above_mm, "");
             let tw = twips(self.text_width_mm() as f32);
-            let (c1, c2) =
-                ((f64::from(tw) * 0.35).round() as u32, tw - (f64::from(tw) * 0.35).round() as u32);
-            let line = parts::hex(t.cover_accent.over(t.paper, 0.45));
+            let c1 = (f64::from(tw) * ph.panel_label_col).round() as u32;
+            let c2 = tw - c1;
+            let line = parts::hex(t.cover_ink.over(t.cover_panel_ground.unwrap_or(t.paper), 0.18));
+            let shd = t
+                .cover_panel_ground
+                .map(|c| format!("<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{}\"/>", parts::hex(c)))
+                .unwrap_or_default();
             let b = format!("w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{line}\"");
             let _ = write!(
                 self.x,
                 "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top {b}/><w:left {b}/><w:bottom {b}/><w:right {b}/><w:insideH {b}/><w:insideV w:val=\"nil\"/></w:tblBorders>\
                  <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{m}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr>\
                  <w:tblGrid><w:gridCol w:w=\"{c1}\"/><w:gridCol w:w=\"{c2}\"/></w:tblGrid>\
-                 <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{tw}\" w:type=\"dxa\"/><w:gridSpan w:val=\"2\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowsHead\"/></w:pPr>{}</w:p></w:tc></w:tr>",
+                 <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{tw}\" w:type=\"dxa\"/><w:gridSpan w:val=\"2\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowsHead\"/></w:pPr>{}</w:p></w:tc></w:tr>",
                 run(CONTROL, ""),
-                m = twips(1.6),
-                x = twips(3.0),
+                m = twips(ph.panel_pad_y_mm as f32),
+                x = twips(ph.panel_pad_x_mm as f32),
             );
             for (l, v) in &rows {
                 let _ = write!(
                     self.x,
-                    "<w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{c1}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowLabel\"/></w:pPr>{}</w:p></w:tc>\
-                     <w:tc><w:tcPr><w:tcW w:w=\"{c2}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowValue\"/></w:pPr>{}</w:p></w:tc></w:tr>",
+                    "<w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{c1}\" w:type=\"dxa\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowLabel\"/></w:pPr>{}</w:p></w:tc>\
+                     <w:tc><w:tcPr><w:tcW w:w=\"{c2}\" w:type=\"dxa\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowValue\"/></w:pPr>{}</w:p></w:tc></w:tr>",
                     run(l, ""),
                     run(v, "")
                 );
@@ -849,9 +922,10 @@ impl<'a, 'p> Writer<'a, 'p> {
         self.para(&PPr { sect: Some(sect), ..PPr::default() }, "");
     }
 
-    /// The logo strip on a card: one column per logo, a rule between them, each a logo 9 mm high (narrower
-    /// when it would not fit its column), the name and the role.
+    /// The logo strip on a card: one column per logo, a rule between them, each logo `PHOTO.logo_mm` high
+    /// in a box of `logo_box_mm` (narrower when it would not fit its column), the name and the role.
     fn logo_card(&mut self, ground: &str) {
+        let ph = PHOTO;
         let logos = self.p.doc.cover_logos.clone();
         let n = logos.len() as u32;
         let tw = twips(self.text_width_mm() as f32);
@@ -862,32 +936,32 @@ impl<'a, 'p> Writer<'a, 'p> {
             "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/>\
              <w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{rule}\"/></w:tblBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/>\
              <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{m}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid>",
-            m = twips(5.0),
-            x = twips(3.0),
+            m = twips(ph.logo_pad_y_mm as f32),
+            x = twips(1.0),
         );
         for _ in 0..n {
             let _ = write!(self.x, "<w:gridCol w:w=\"{col}\"/>");
         }
         self.x.push_str("</w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>");
-        let max_w = f64::from(col) / 56.693 - 8.0; // the column, less its margins, in millimetres
+        let max_w = f64::from(col) / 56.693 - 4.0; // the column, less its margins, in millimetres
         for l in &logos {
             let _ = write!(
                 self.x,
                 "<w:tc><w:tcPr><w:tcW w:w=\"{col}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/><w:vAlign w:val=\"center\"/></w:tcPr>"
             );
             if let Some(pic) = self.pic(&l.asset) {
-                let mut h = 9.0;
+                let mut h = ph.logo_mm;
                 let mut w = h / pic.aspect;
                 if w > max_w {
                     w = max_w;
                     h = w * pic.aspect;
                 }
                 let drawing = self.inline(&pic, emu(w), emu(h), &l.name, &l.name);
-                // A 10 mm line, centred, as the PDF's 10 mm block.
                 let _ = write!(
                     self.x,
-                    "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"exact\"/><w:jc w:val=\"center\"/></w:pPr>{drawing}</w:p>",
-                    twips(10.0)
+                    "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/><w:jc w:val=\"center\"/></w:pPr>{drawing}</w:p>",
+                    twips(2.0),
+                    twips(ph.logo_box_mm as f32)
                 );
             }
             let _ = write!(
@@ -1119,6 +1193,18 @@ impl<'a, 'p> Writer<'a, 'p> {
     /// A picture at the top left of the page, the given size, behind the text, as a run.
     fn anchor_behind(&mut self, pic: &Pic, cx: u64, cy: u64) -> String {
         self.anchor_page(pic, cx, cy, 0, true, None)
+    }
+
+    /// A picture at the left edge of the page, `y` from its top, the given size, behind the text, as a run.
+    fn anchor_at(&mut self, pic: &Pic, cx: u64, cy: u64, y: u64, z: u32) -> String {
+        let (id, g) = self.graphic(pic, cx, cy, "Rule", "");
+        format!(
+            "<w:r><w:drawing><wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"{z}\" behindDoc=\"1\" locked=\"1\" layoutInCell=\"1\" allowOverlap=\"1\">\
+             <wp:simplePos x=\"0\" y=\"0\"/><wp:positionH relativeFrom=\"page\"><wp:posOffset>0</wp:posOffset></wp:positionH>\
+             <wp:positionV relativeFrom=\"page\"><wp:posOffset>{y}</wp:posOffset></wp:positionV><wp:extent cx=\"{cx}\" cy=\"{cy}\"/>\
+             <wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapNone/><wp:docPr id=\"{id}\" name=\"Rule\" descr=\"\"/>\
+             <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>{g}</wp:anchor></w:drawing></w:r>"
+        )
     }
 
     /// A picture at the top left of the page, the given size, as a run: `z` orders pictures behind the text

@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 
 use crate::markdown::{Inline, MdBlock};
 use crate::model::{Align, CoverLayout, MediaType};
-use crate::render::{CONTROL, Prepared};
+use crate::render::{CONTROL, PHOTO, Prepared};
 use crate::resolve::{RBlock, RFigure, RTable, cell_inlines};
 use crate::template::Colour;
 
@@ -120,9 +120,16 @@ struct W<'a> {
     anchors: BTreeSet<&'a str>,
     /// Anchors of the headings in the table of contents.
     toc: BTreeSet<&'a str>,
+    /// The photo cover's photograph height, millimetres.
+    band_mm: f64,
 }
 
 pub fn markup(p: &Prepared) -> Markup {
+    markup_with_band(p, crate::write::pdf::band_mm(p), true)
+}
+
+/// The source with the photo cover's photograph `band_mm` high. With `full` false, the preamble only.
+fn markup_with_band(p: &Prepared, band_mm: f64, full: bool) -> Markup {
     let d = &p.doc;
     let mut files = Vec::new();
     let mut paths = Vec::new();
@@ -146,8 +153,11 @@ pub fn markup(p: &Prepared) -> Markup {
     }
     let toc = d.toc.iter().map(|e| e.anchor.as_str()).collect();
     let date = iso_date(&d.control.date);
-    let mut w = W { p, o: String::with_capacity(64 * 1024), paths, anchors, toc };
+    let mut w = W { p, o: String::with_capacity(64 * 1024), paths, anchors, toc, band_mm };
     w.preamble(date);
+    if !full {
+        return Markup { source: w.o, files, date };
+    }
     if p.template.cover {
         match p.template.cover_layout {
             CoverLayout::Classic => w.cover(),
@@ -240,11 +250,48 @@ impl W<'_> {
             let italic = if i == 3 { ", style: \"italic\"" } else { "" };
             let _ = writeln!(o, "#show heading.where(level: {}): set text(size: {size}{italic})", i + 1);
         }
+        // With sizes in points (0.2), the space around a heading is in points too: Word's, so the two agree.
+        let (h1_above, h1_below) = if t.heading_sizes_pt.is_some() {
+            for (lvl, above) in [(1, 18), (2, 15), (3, 12), (4, 10)] {
+                let _ =
+                    writeln!(o, "#show heading.where(level: {lvl}): set block(above: {above}pt, below: 6pt)");
+            }
+            ("18pt", "6pt")
+        } else {
+            ("1.6em", "0.8em")
+        };
         if let Some(r) = t.heading_rule {
             let _ = writeln!(
                 o,
-                "#show heading.where(level: 1): it => block(width: 100%, above: 1.6em, below: 0.8em, stroke: (bottom: 1.2pt + {}), inset: (bottom: 3pt))[#it.body]",
+                "#show heading.where(level: 1): it => block(width: 100%, above: {h1_above}, below: {h1_below}, stroke: (bottom: 1.2pt + {}), inset: (bottom: 3pt))[#it.body]",
                 rgb(r)
+            );
+        }
+        // Line height (0.2): every line box is the line height tall, with half the leading above the text
+        // and half below, as in CSS and in Word's "at least" line spacing, so a one-line table row is as tall
+        // in the PDF as in Word. Headings keep single lines, as Word's do. Paragraph and list spacing follow.
+        if let Some(lh) = t.line_height {
+            let half = (f64::from(lh) - 1.0) / 2.0;
+            let _ = writeln!(
+                o,
+                "#set text(top-edge: {}em, bottom-edge: -{}em)\n#set par(leading: 0pt)",
+                num(0.8 + half),
+                num(0.2 + half)
+            );
+            o.push_str("#show heading: set text(top-edge: 0.8em, bottom-edge: -0.2em)\n#show heading: set par(leading: 0.2em)\n");
+            let gap = t.paragraph_spacing_pt.map(f64::from).unwrap_or(6.0);
+            let _ = writeln!(o, "#set par(spacing: {}pt)", num(gap));
+            o.push_str("#set list(spacing: 3pt)\n#set enum(spacing: 3pt)\n");
+        } else if let Some(gap) = t.paragraph_spacing_pt {
+            let _ = writeln!(o, "#set par(spacing: {}pt)", num(gap.into()));
+        }
+        if let Some(i) = t.list_indent_mm {
+            // The text of an item starts one indent in per level, as Word's hanging indent puts it.
+            let _ = writeln!(
+                o,
+                "#set list(indent: 0pt, body-indent: {}mm - 0.45em)\n#set enum(indent: 0pt, body-indent: {}mm - 1.1em)",
+                num(i.into()),
+                num(i.into())
             );
         }
         let _ = writeln!(o, "#show raw: set text(font: {}, size: 0.9em)", lit(t.mono_font));
@@ -352,71 +399,121 @@ impl W<'_> {
         self.o.push_str(")]\n]\n\n");
     }
 
-    /// The photo cover (spec 0002 §4): a photograph across the head of the page, then on the cover paper a
-    /// short accent rule, the title, the subtitle in the accent, the summary on a card, the logo strip on a
-    /// card, and the control block. Its foot holds the number and revision, and the sensitivity.
+    /// The photo cover (spec 0002 §4): a photograph across the head of the page, then on the cover paper the
+    /// title block (§`photo_body`). Its foot holds the number and revision, and the sensitivity.
     fn photo_cover(&mut self) {
         let p = self.p;
         let d = &p.doc;
         let t = &p.template;
-        let (ink, accent, card) = (rgb(t.cover_ink), rgb(t.cover_accent), rgb(t.card_ground));
+        let foot_ink = rgb(t.cover_ink.over(t.paper, 0.65));
         let _ = writeln!(
             self.o,
             "#page(fill: {}, margin: (top: 0mm, bottom: {}mm, left: {}mm, right: {}mm), header: none, \
-             footer: [#set text(size: 7.5pt, fill: {accent})\n{}#h(1fr){}])[",
+             footer: [#set text(size: {}pt, fill: {foot_ink})\n{}#h(1fr){}])[",
             rgb(t.paper),
             num(t.margin_bottom_mm.into()),
             num(t.margin_left_mm.into()),
             num(t.margin_right_mm.into()),
+            num(PHOTO.foot_pt),
             esc(&p.header_left()),
             esc(&d.control.sensitivity),
         );
-        let _ = writeln!(self.o, "#set text(fill: {ink})");
-        let band = f64::from(t.cover_image_height_mm);
+        let band = self.band_mm;
         match d.cover_image.as_ref().and_then(|(id, alt)| self.asset_path(id).map(|p| (p.to_string(), alt))) {
             Some((path, alt)) => {
+                let rule = t.cover_image_rule_pt.unwrap_or(0.0);
                 let _ = writeln!(
                     self.o,
-                    "#place(top + left, dx: -{}mm)[#image({}, width: {}mm, height: {}mm, fit: \"cover\", alt: {})]\n#v({}mm)",
+                    "#place(top + left, dx: -{}mm)[#image({}, width: {}mm, height: {}mm, fit: \"cover\", alt: {})]",
                     num(t.margin_left_mm.into()),
                     lit(&path),
                     num(t.page_width_mm.into()),
                     num(band),
                     lit(alt),
-                    num(band + 12.0),
                 );
+                if rule > 0.0 {
+                    let _ = writeln!(
+                        self.o,
+                        "#place(top + left, dx: -{}mm, dy: {}mm)[#block(width: {}mm, height: {}pt, fill: {})[]]",
+                        num(t.margin_left_mm.into()),
+                        num(band),
+                        num(t.page_width_mm.into()),
+                        num(rule.into()),
+                        rgb(t.cover_accent)
+                    );
+                }
+                let _ = writeln!(self.o, "#v({}mm)", num(band + PHOTO.gap_mm));
             }
             None => {
                 let _ = writeln!(self.o, "#v({}mm)", num(f64::from(t.margin_top_mm)));
             }
         }
+        self.photo_body();
+        self.o.push_str("]\n\n");
+    }
+
+    /// The content of the photo cover under the photograph: the accent rule (only with no rule under a
+    /// photograph), the title, the subtitle, organisation and notice in the accent, the summary card, the logo
+    /// card and the control block. Every measurement is `PHOTO`'s. Line boxes are one em, so a line height is
+    /// the distance from one baseline to the next, as in Word.
+    fn photo_body(&mut self) {
+        let p = self.p;
+        let d = &p.doc;
+        let t = &p.template;
+        let (ink, accent, card) = (rgb(t.cover_ink), rgb(t.cover_accent), rgb(t.card_ground));
+        let _ = writeln!(self.o, "#set text(fill: {ink}, top-edge: 0.8em, bottom-edge: -0.2em)");
+        let ruled = d.cover_image.is_some() && t.cover_image_rule_pt.is_some_and(|r| r > 0.0);
+        if !ruled {
+            let _ = writeln!(self.o, "#block(width: 14mm, height: 1.5pt, fill: {accent}, below: 5mm)[]");
+        }
         let head = lit(&t.heading_font);
         let weight = if t.heading_bold { "bold" } else { "regular" };
-        let _ = writeln!(self.o, "#block(width: 14mm, height: 1.5pt, fill: {accent}, below: 5mm)[]");
         let _ = writeln!(
             self.o,
-            "#block(below: 4mm)[#set par(leading: 0.45em)\n#text(font: {head}, weight: \"{weight}\", size: 25pt)[{}]]",
+            "#block(above: 0mm, below: {}mm)[#set par(leading: {}em)\n#text(font: {head}, weight: \"{weight}\", size: {}pt)[{}]]",
+            num(PHOTO.title_after_mm),
+            num(PHOTO.title_lh - 1.0),
+            num(t.cover_title_pt.into()),
             esc(&d.title)
         );
-        for line in [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten() {
-            let _ =
-                writeln!(self.o, "#block(below: 2mm)[#text(size: 0.82em, fill: {accent})[{}]]", esc(line));
-        }
-        let card_open = |o: &mut String| {
+        let lines: Vec<&String> = [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten().collect();
+        for (i, line) in lines.iter().enumerate() {
+            let below = if i + 1 == lines.len() { PHOTO.meta_after_mm } else { 1.0 };
             let _ = writeln!(
-                o,
-                "#block(width: 100%, fill: {card}, radius: 1.5mm, inset: (x: 6mm, y: 5mm), above: 5mm, below: 0mm)[#set text(fill: {})",
-                rgb(t.ink)
+                self.o,
+                "#block(above: 0mm, below: {}mm)[#set par(leading: 0.35em)\n#text(size: {}pt, fill: {accent})[{}]]",
+                num(below),
+                num(PHOTO.meta_pt),
+                esc(line)
             );
-        };
+        }
+        if lines.is_empty() {
+            let _ = writeln!(self.o, "#v({}mm)", num(PHOTO.meta_after_mm - PHOTO.title_after_mm));
+        }
         if let Some(s) = &d.summary {
-            card_open(&mut self.o);
+            let _ = writeln!(
+                self.o,
+                "#block(width: 100%, fill: {card}, radius: 1mm, inset: (x: {}mm, top: {}mm, bottom: {}mm), above: 0mm, below: {}mm)[#set text(fill: {}, size: {}pt)\n#set par(leading: {}em, spacing: {}mm)",
+                num(PHOTO.card_pad_x_mm),
+                num(PHOTO.card_pad_top_mm),
+                num(PHOTO.card_pad_bottom_mm),
+                num(PHOTO.card_gap_mm),
+                rgb(t.ink),
+                num(PHOTO.card_text_pt),
+                num(PHOTO.card_lh - 1.0),
+                num(PHOTO.card_par_gap_mm + (PHOTO.card_lh - 1.0) * PHOTO.card_text_pt * 0.3528),
+            );
             self.md_blocks(s);
             self.o.push_str("]\n");
         }
         if !d.cover_logos.is_empty() {
-            card_open(&mut self.o);
             let n = d.cover_logos.len();
+            let _ = writeln!(
+                self.o,
+                "#block(width: 100%, fill: {card}, radius: 1mm, inset: (x: 1mm, y: {}mm), above: 0mm, below: 0mm)[#set text(fill: {})\n#set par(leading: 0.25em)",
+                num(PHOTO.logo_pad_y_mm),
+                rgb(t.ink)
+            );
             let _ = writeln!(
                 self.o,
                 "#grid(columns: ({}), align: center + horizon, stroke: (x, _) => if x > 0 {{ (left: 0.5pt + {}) }},",
@@ -428,16 +525,24 @@ impl W<'_> {
                 if let Some(path) = self.asset_path(&l.asset).map(str::to_string) {
                     let _ = write!(
                         self.o,
-                        "#block(height: 10mm, below: 2mm)[#align(center + horizon)[#image({}, height: 9mm, alt: {})]]",
+                        "#block(height: {}mm, above: 0mm, below: 2mm)[#align(center + horizon)[#image({}, height: {}mm, alt: {})]]",
+                        num(PHOTO.logo_box_mm),
                         lit(&path),
+                        num(PHOTO.logo_mm),
                         lit(&l.name)
                     );
                 }
-                let _ = write!(self.o, "#block(below: 1mm)[#text(size: 0.8em)[#strong[{}]]]", esc(&l.name));
+                let _ = write!(
+                    self.o,
+                    "#block(above: 0mm, below: 1mm)[#text(size: {}pt)[#strong[{}]]]",
+                    num(PHOTO.logo_name_pt),
+                    esc(&l.name)
+                );
                 if let Some(r) = &l.role {
                     let _ = write!(
                         self.o,
-                        "#block[#text(size: 0.62em, tracking: 0.08em, fill: {})[#upper({})]]",
+                        "#block(above: 0mm, below: 0mm)[#text(size: {}pt, tracking: 0.08em, fill: {})[#upper({})]]",
+                        num(PHOTO.logo_role_pt),
                         rgb(t.ink_2),
                         lit(r)
                     );
@@ -448,28 +553,36 @@ impl W<'_> {
         }
         let rows = p.cover_rows();
         if !rows.is_empty() {
-            let line = format!("0.5pt + {}", rgb(t.cover_accent.over(t.paper, 0.45)));
+            let line =
+                format!("0.5pt + {}", rgb(t.cover_ink.over(t.cover_panel_ground.unwrap_or(t.paper), 0.18)));
             let label_ink = rgb(t.cover_ink.over(t.paper, 0.65));
+            let fill = t.cover_panel_ground.map(|c| format!(", fill: {}", rgb(c))).unwrap_or_default();
             let _ = writeln!(
                 self.o,
-                "#block(width: 100%, above: 6mm, stroke: {line}, radius: 1mm, clip: true)[#table(columns: (35%, 1fr), stroke: (bottom: {line}), inset: (x: 3mm, y: 2.2mm),"
+                "#block(width: 100%, above: {}mm, below: 0mm, stroke: {line}, radius: 1mm, clip: true{fill})[#set par(leading: 0.3em)\n#table(columns: ({}%, 1fr), stroke: (bottom: {line}), inset: (x: {}mm, y: {}mm),",
+                num(PHOTO.panel_above_mm),
+                num(PHOTO.panel_label_col * 100.0),
+                num(PHOTO.panel_pad_x_mm),
+                num(PHOTO.panel_pad_y_mm),
             );
             let _ = writeln!(
                 self.o,
-                "  table.cell(colspan: 2)[#text(size: 0.72em, tracking: 0.12em, fill: {accent})[#strong[#upper({})]]],",
+                "  table.cell(colspan: 2)[#text(size: {}pt, tracking: 0.14em, fill: {accent})[#strong[#upper({})]]],",
+                num(PHOTO.panel_head_pt),
                 lit(CONTROL)
             );
             for (l, v) in &rows {
                 let _ = writeln!(
                     self.o,
-                    "  [#text(size: 0.72em, tracking: 0.08em, fill: {label_ink})[#upper({})]], [#text(size: 0.9em)[#strong[{}]]],",
+                    "  [#text(size: {}pt, tracking: 0.04em, fill: {label_ink})[#upper({})]], [#text(size: {}pt)[#strong[{}]]],",
+                    num(PHOTO.panel_label_pt),
                     lit(l),
+                    num(PHOTO.panel_value_pt),
                     esc(v)
                 );
             }
             self.o.push_str(")]\n");
         }
-        self.o.push_str("]\n\n");
     }
 
     fn control(&mut self) {
@@ -592,9 +705,22 @@ impl W<'_> {
         };
         let al =
             if aligns.is_empty() { "left + top".to_string() } else { format!("({},)", aligns.join(", ")) };
+        // Every second body row takes the stripe (0.2), in a table with a header row.
+        let stripe = match t.table_stripe {
+            Some(c) if header_rows > 0 => {
+                format!(" else if calc.odd(y - {header_rows}) {{ {} }}", rgb(c))
+            }
+            _ => String::new(),
+        };
+        let padding =
+            if header_rows == 0 { t.headless_padding_mm.or(t.table_padding_mm) } else { t.table_padding_mm };
+        let inset = match padding {
+            Some([y, x]) => format!("(x: {}mm, y: {}mm)", num(x.into()), num(y.into())),
+            None => "(x: 0.5em, y: 0.35em)".into(),
+        };
         let _ = writeln!(
             self.o,
-            "#table(columns: {cols}, align: {al}, fill: (_, y) => if y < {header_rows} {{ {} }}, stroke: (top: none, left: none, right: none, bottom: 0.5pt + {}), inset: (x: 0.5em, y: 0.35em),",
+            "#table(columns: {cols}, align: {al}, fill: (_, y) => if y < {header_rows} {{ {} }}{stripe}, stroke: (top: none, left: none, right: none, bottom: 0.5pt + {}), inset: {inset},",
             rgb(t.accent_ground),
             rgb(t.rule)
         );
@@ -608,6 +734,10 @@ impl W<'_> {
         }
         if self.p.template.table_tabular_figures {
             self.o.push_str("#set text(number-width: \"tabular\")\n");
+        }
+        let size = if t.header { None } else { self.p.template.headless_size_pt };
+        if let Some(size) = size.or(self.p.template.table_size_pt) {
+            let _ = writeln!(self.o, "#set text(size: {}pt)", num(size.into()));
         }
         let header_rows = match (t.header, t.groups.is_empty()) {
             (false, _) => 0,
@@ -654,10 +784,17 @@ impl W<'_> {
             self.o.push_str("),\n");
         }
         let n = t.columns.len();
+        // A table with no header row is labels and values: the label column is in the second ink.
+        let label_ink = (!t.header).then(|| format!("#set text(fill: {})\n", rgb(self.p.template.ink_2)));
         for row in &t.rows {
             self.o.push(' ');
             for i in 0..n {
                 self.o.push_str(" [");
+                if i == 0
+                    && let Some(l) = &label_ink
+                {
+                    self.o.push_str(l);
+                }
                 if let Some(c) = row.get(i) {
                     self.inlines(cell_inlines(c));
                 }
@@ -799,6 +936,39 @@ impl W<'_> {
             }
         }
     }
+}
+
+/// The Typst source of the photo cover's content alone, on a page the width of the text and as tall as the
+/// content: its height is what the photograph leaves room for (`crate::write::pdf::band_mm`).
+pub fn cover_measure(p: &Prepared) -> Markup {
+    let mut m = markup_with_band(p, 0.0, false);
+    let t = &p.template;
+    let mut w = W {
+        p,
+        o: std::mem::take(&mut m.source),
+        paths: Vec::new(),
+        anchors: BTreeSet::new(),
+        toc: BTreeSet::new(),
+        band_mm: 0.0,
+    };
+    // `markup_with_band(.., false)` wrote only the preamble; the paths it made are the same.
+    for (i, (id, a)) in p.assets.iter().enumerate() {
+        let ext = match a.media_type {
+            MediaType::Png => "png",
+            MediaType::Svg => "svg",
+            MediaType::Jpeg => "jpg",
+            MediaType::Font => continue,
+        };
+        w.paths.push((id.as_str(), format!("/a{i}.{ext}")));
+    }
+    let _ = writeln!(
+        w.o,
+        "#set page(width: {}mm, height: auto, margin: 0pt, header: none, footer: none, fill: none)",
+        num(f64::from(t.page_width_mm - t.margin_left_mm - t.margin_right_mm))
+    );
+    w.photo_body();
+    m.source = w.o;
+    m
 }
 
 #[cfg(test)]

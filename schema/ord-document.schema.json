@@ -951,6 +951,115 @@
             "string",
             "null"
           ]
+        },
+        "cover_image_fill": {
+          "description": "Photo cover: the photograph grows to take the height the cover's content leaves, between\n`cover_image_min_mm` and `cover_image_height_mm`, so the content sits at the foot. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cover_image_min_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_image_rule_pt": {
+          "description": "Photo cover: a rule of the accent along the foot of the photograph, points. It replaces the short\nrule above the title. Default none.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_title_pt": {
+          "description": "Photo cover: the title size, points. Default 25.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_panel_ground": {
+          "description": "Photo cover: the ground of the control block. Default none (the cover paper shows through).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table_size_pt": {
+          "description": "Table text size, points. Default the body size.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "table_padding_mm": {
+          "description": "Table cell padding, millimetres: [top and bottom, left and right].",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "headless_padding_mm": {
+          "description": "A table with no header row (labels and values): its cell padding [top and bottom, left and right],\nmillimetres, and its text size, points. Default those of the other tables.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "headless_size_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "table_stripe": {
+          "description": "The ground of every second body row of a table with a header row. Default none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_height": {
+          "description": "The distance from one line of body text to the next, in multiples of the text size (such as 1.5).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "paragraph_spacing_pt": {
+          "description": "The space between paragraphs, points.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "list_indent_mm": {
+          "description": "The indent of each list level, millimetres.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
         }
       },
       "additionalProperties": false

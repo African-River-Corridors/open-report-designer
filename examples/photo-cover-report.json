@@ -13,14 +13,31 @@
     "prepared": "Group secretary"
   },
   "summary": "The group agreed the **survey plan** for the upper reach, asked for a second quote for the bank works, and set the next meeting for 11 November 2026.",
-  "cover_image": { "asset": "reach-photo", "alt": "An invented river winding between low hills" },
+  "cover_image": {
+    "asset": "reach-photo",
+    "alt": "An invented river winding between low hills"
+  },
   "cover_logos": [
-    { "asset": "example-mark", "name": "Example Waterways", "role": "Consultant" },
-    { "asset": "northbank-mark", "name": "Northbank Survey Co.", "role": "Surveyor" }
+    {
+      "asset": "example-mark",
+      "name": "Example Waterways",
+      "role": "Consultant"
+    },
+    {
+      "asset": "northbank-mark",
+      "name": "Northbank Survey Co.",
+      "role": "Surveyor"
+    }
   ],
   "cover_details": [
-    { "label": "Prepared for", "value": "The Northbank Reach Steering Group" },
-    { "label": "Status", "value": "Draft · Rev B · 16 October 2026" }
+    {
+      "label": "Prepared for",
+      "value": "The Northbank Reach Steering Group"
+    },
+    {
+      "label": "Status",
+      "value": "Draft · Rev B · 16 October 2026"
+    }
   ],
   "footer": "Northbank Reach Steering Group · Meeting 4",
   "contents": false,
@@ -28,12 +45,31 @@
     {
       "type": "table",
       "header": false,
-      "columns": [{ "title": "" }, { "title": "" }],
+      "columns": [
+        {
+          "title": ""
+        },
+        {
+          "title": ""
+        }
+      ],
       "rows": [
-        ["Meeting", "Steering group, meeting 4"],
-        ["Date", "Wednesday 14 October 2026"],
-        ["Opened", "10:00"],
-        ["Closed", "11:35"]
+        [
+          "Meeting",
+          "Steering group, meeting 4"
+        ],
+        [
+          "Date",
+          "Wednesday 14 October 2026"
+        ],
+        [
+          "Opened",
+          "10:00"
+        ],
+        [
+          "Closed",
+          "11:35"
+        ]
       ]
     },
     {
@@ -43,11 +79,36 @@
       "body": [
         {
           "type": "table",
-          "columns": [{ "title": "Name" }, { "title": "Role" }, { "title": "Status", "width": 0.2 }],
+          "columns": [
+            {
+              "title": "Name"
+            },
+            {
+              "title": "Role"
+            },
+            {
+              "title": "Status",
+              "width": 0.2
+            }
+          ],
           "rows": [
-            ["A. Example", "Chair", "Present"],
-            ["B. Sample", "Engineer for the consultant, and the group's secretary for this meeting", "Present"],
-            ["C. Placeholder", "Surveyor", { "markdown": "Present *(by video)*" }]
+            [
+              "A. Example",
+              "Chair",
+              "Present"
+            ],
+            [
+              "B. Sample",
+              "Engineer for the consultant, and the group's secretary for this meeting",
+              "Present"
+            ],
+            [
+              "C. Placeholder",
+              "Surveyor",
+              {
+                "markdown": "Present *(by video)*"
+              }
+            ]
           ]
         }
       ]
@@ -57,24 +118,59 @@
       "id": "survey",
       "title": "Survey plan",
       "body": [
-        { "type": "prose", "markdown": "The surveyor presented the plan for the upper reach. The cost is in [[#survey-cost]]." },
+        {
+          "type": "prose",
+          "markdown": "The surveyor presented the plan for the upper reach. The cost is in [[#survey-cost]]."
+        },
         {
           "type": "table",
           "id": "survey-cost",
           "caption": "Survey cost by stage",
           "column_groups": [
-            { "title": "", "span": 1 },
-            { "title": "Cost by option (USD k)", "span": 2 }
+            {
+              "title": "",
+              "span": 1
+            },
+            {
+              "title": "Cost by option (USD k)",
+              "span": 2
+            }
           ],
           "columns": [
-            { "title": "Stage" },
-            { "title": "Option A", "align": "right" },
-            { "title": "Option B", "align": "right" }
+            {
+              "title": "Stage"
+            },
+            {
+              "title": "Option A",
+              "align": "right"
+            },
+            {
+              "title": "Option B",
+              "align": "right"
+            }
           ],
           "rows": [
-            ["Bathymetry", "42", "55"],
-            ["Bank walkover", "18", "18"],
-            [{ "markdown": "**Total**" }, { "markdown": "**60**" }, { "markdown": "**73**" }]
+            [
+              "Bathymetry",
+              "42",
+              "55"
+            ],
+            [
+              "Bank walkover",
+              "18",
+              "18"
+            ],
+            [
+              {
+                "markdown": "**Total**"
+              },
+              {
+                "markdown": "**60**"
+              },
+              {
+                "markdown": "**73**"
+              }
+            ]
           ],
           "notes": "Prices are the surveyor's, before tax."
         },
@@ -82,7 +178,10 @@
           "type": "section",
           "title": "Bank works",
           "body": [
-            { "type": "prose", "markdown": "The group asked for a second quote before it decides.\n\n- **Owner:** the engineer.\n- **By:** the next meeting." }
+            {
+              "type": "prose",
+              "markdown": "The group asked for a second quote before it decides.\n\n- **Owner:** the engineer.\n- **By:** the next meeting."
+            }
           ]
         }
       ]
@@ -94,20 +193,52 @@
       "body": [
         {
           "type": "table",
-          "columns": [{ "title": "Ref" }, { "title": "Action" }, { "title": "Owner" }],
+          "columns": [
+            {
+              "title": "Ref"
+            },
+            {
+              "title": "Action"
+            },
+            {
+              "title": "Owner"
+            }
+          ],
           "rows": [
-            ["A1", { "markdown": "Get a second quote for the bank works.\\\nShare it before the meeting." }, "Engineer"],
-            ["A2", "Book the survey boat.", "Surveyor"]
+            [
+              "A1",
+              {
+                "markdown": "Get a second quote for the bank works.\\\nShare it before the meeting."
+              },
+              "Engineer"
+            ],
+            [
+              "A2",
+              "Book the survey boat.",
+              "Surveyor"
+            ]
           ]
         }
       ]
     }
   ],
   "assets": {
-    "reach-photo": { "media_type": "image/jpeg", "path": "assets/reach-photo.jpg" },
-    "example-mark": { "media_type": "image/svg+xml", "path": "assets/example-waterways-mark.svg" },
-    "northbank-mark": { "media_type": "image/svg+xml", "path": "assets/northbank-mark.svg" },
-    "public-sans": { "media_type": "font/ttf", "path": "../crates/ord/fonts/PublicSans-Regular.ttf" }
+    "reach-photo": {
+      "media_type": "image/jpeg",
+      "path": "assets/reach-photo.jpg"
+    },
+    "example-mark": {
+      "media_type": "image/svg+xml",
+      "path": "assets/example-waterways-mark.svg"
+    },
+    "northbank-mark": {
+      "media_type": "image/svg+xml",
+      "path": "assets/northbank-mark.svg"
+    },
+    "public-sans": {
+      "media_type": "font/ttf",
+      "path": "../crates/ord/fonts/PublicSans-Regular.ttf"
+    }
   },
   "template": {
     "cover_layout": "photo",
@@ -119,18 +250,50 @@
     "table_header_ink": "#ffffff",
     "heading_ink": "#24343f",
     "heading_rule": "#d8b46a",
-    "heading_sizes_pt": [14, 11.5, 10.5, 10],
+    "heading_sizes_pt": [
+      14,
+      11.5,
+      10.5,
+      10
+    ],
     "heading_bold": true,
     "heading_numbers": "dotted",
     "section_page_break": false,
     "body_font": "Public Sans",
-    "fonts": ["public-sans"],
+    "fonts": [
+      "public-sans"
+    ],
     "body_size_pt": 10.5,
-    "margins_mm": { "top": 16, "bottom": 18, "left": 16, "right": 16 },
+    "margins_mm": {
+      "top": 16,
+      "bottom": 18,
+      "left": 16,
+      "right": 16
+    },
     "control_page": false,
     "running_head": false,
     "foot_sensitivity": true,
     "table_widths": "content",
-    "revision_prefix": "Rev "
+    "revision_prefix": "Rev ",
+    "cover_image_fill": true,
+    "cover_image_min_mm": 38,
+    "cover_image_height_mm": 150,
+    "cover_image_rule_pt": 2.25,
+    "cover_title_pt": 28,
+    "cover_panel_ground": "#1d2b34",
+    "line_height": 1.5,
+    "paragraph_spacing_pt": 5.25,
+    "list_indent_mm": 5.8,
+    "table_size_pt": 9.5,
+    "table_padding_mm": [
+      1.3,
+      2.1
+    ],
+    "table_stripe": "#f4f1ea",
+    "headless_size_pt": 9.6,
+    "headless_padding_mm": [
+      1.6,
+      2.6
+    ]
   }
 }

@@ -262,6 +262,70 @@ impl Prepared<'_> {
     }
 }
 
+/// The measurements of the photo cover (spec 0002 §4), in one table that the PDF and Word writers both read,
+/// so the two draw the same cover. Lengths are millimetres, sizes points, line heights multiples of the size.
+#[derive(Debug, Clone, Copy)]
+pub struct CoverLook {
+    /// The space between the photograph (or the top margin) and the title block.
+    pub gap_mm: f64,
+    pub title_lh: f64,
+    pub title_after_mm: f64,
+    pub meta_pt: f64,
+    pub meta_after_mm: f64,
+    pub card_pad_x_mm: f64,
+    pub card_pad_top_mm: f64,
+    pub card_pad_bottom_mm: f64,
+    pub card_gap_mm: f64,
+    pub card_text_pt: f64,
+    pub card_lh: f64,
+    pub card_par_gap_mm: f64,
+    pub logo_pad_y_mm: f64,
+    pub logo_box_mm: f64,
+    pub logo_mm: f64,
+    pub logo_name_pt: f64,
+    pub logo_role_pt: f64,
+    pub panel_above_mm: f64,
+    pub panel_pad_y_mm: f64,
+    pub panel_pad_x_mm: f64,
+    pub panel_head_pt: f64,
+    pub panel_label_pt: f64,
+    pub panel_value_pt: f64,
+    pub panel_label_col: f64,
+    pub foot_pt: f64,
+    /// Room left under the content when the photograph fills, so a writer whose lines run a little taller
+    /// still keeps the cover on one page.
+    pub slack_mm: f64,
+}
+
+pub const PHOTO: CoverLook = CoverLook {
+    gap_mm: 11.0,
+    title_lh: 1.14,
+    title_after_mm: 3.2,
+    meta_pt: 9.4,
+    meta_after_mm: 5.8,
+    card_pad_x_mm: 5.3,
+    card_pad_top_mm: 4.5,
+    card_pad_bottom_mm: 5.0,
+    card_gap_mm: 3.7,
+    card_text_pt: 10.2,
+    card_lh: 1.55,
+    card_par_gap_mm: 2.4,
+    logo_pad_y_mm: 4.2,
+    logo_box_mm: 10.0,
+    logo_mm: 9.0,
+    logo_name_pt: 8.4,
+    logo_role_pt: 6.6,
+    panel_above_mm: 4.8,
+    panel_pad_y_mm: 2.1,
+    panel_pad_x_mm: 3.2,
+    panel_head_pt: 8.0,
+    panel_label_pt: 8.0,
+    panel_value_pt: 9.6,
+    panel_label_col: 0.32,
+    foot_pt: 7.6,
+    slack_mm: 4.0,
+};
+
 /// The title of the document-control page, and of the control block on a photo cover.
 pub const CONTROL: &str = "Document control";
 
