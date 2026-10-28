@@ -18,8 +18,9 @@ passes values, never a template language.
   at the field's path, so a `"0.1"` document still renders the same on a 0.1 engine.
 - A 0.1 engine refuses a `"0.2"` document at `/ord` (spec 0001 §3.1), so a document never loses fields
   silently on an older engine.
-- A `"0.1"` document renders **byte for byte** as on the 0.1 engine, in all three formats. (Tested by hand
-  against `v0.1.0` and `main` for the example and the stress document.)
+- A `"0.1"` document renders **byte for byte** as on the 0.1 engine, in all three formats, with one fix: a
+  Word file with no table of contents no longer sets `updateFields` (§8). (Tested by hand against `main` for
+  the example and the stress document, which both have a table of contents.)
 
 ## 3. The document
 
@@ -121,7 +122,8 @@ numbers in every writer.
 The Word file is meant to be edited and saved as the master of a report. So: every paragraph has a named style
 (Title, Heading 1 to 4, Table Text, Table Header, Cover Title, Card Text, and so on); the running foot and the
 cover foot are text; the only fields are `PAGE` and `NUMPAGES` (no `DOCPROPERTY`, which shows an error when the
-property is missing); and every layout value is the template's, so the file looks like the PDF.
+property is missing); `updateFields` is set only for a table of contents (Word asks a modal question on every
+open when it is set); and every layout value is the template's, so the file looks like the PDF.
 
 ## 9. Tests
 

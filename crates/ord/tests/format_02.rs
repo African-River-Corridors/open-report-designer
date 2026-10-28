@@ -256,3 +256,15 @@ fn the_photo_is_cropped_to_fill_its_band_in_word() {
     assert!(body.contains("<a:srcRect l=\"0\" t=\""), "no crop");
     assert!(docx_part(&docx, "[Content_Types].xml").unwrap().contains("Extension=\"jpeg\""));
 }
+
+#[test]
+fn word_asks_to_update_fields_only_for_a_table_of_contents() {
+    // Word answers `updateFields` with a modal question on every open. A document with no contents list
+    // has nothing to update (PAGE and NUMPAGES update anyway), so it must open without asking.
+    let (d, a) = photo();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    assert!(!docx_part(&docx, "word/settings.xml").unwrap().contains("updateFields"));
+    let (d, a) = example();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    assert!(docx_part(&docx, "word/settings.xml").unwrap().contains("<w:updateFields w:val=\"true\"/>"));
+}

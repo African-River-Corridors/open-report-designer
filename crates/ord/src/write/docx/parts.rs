@@ -122,15 +122,21 @@ pub fn app(p: &Prepared) -> String {
     x
 }
 
-/// `word/settings.xml`: fields update on open (so Word fills the table of contents), fonts embedded,
-/// hyphenation off. The children are in the schema's order.
+/// `word/settings.xml`: fonts embedded, hyphenation off, and, when the document has a table of contents,
+/// fields update on open (so Word fills in its page numbers). The children are in the schema's order.
+///
+/// `updateFields` is written only for a table of contents: Word answers it with a modal "update the
+/// fields?" question on every open, which a master that people edit should not ask, and which stops a
+/// scripted export until someone clicks. PAGE and NUMPAGES update without it.
 pub fn settings(p: &Prepared) -> String {
     let mut x = String::from(DECL);
     let _ = write!(x, "<w:settings xmlns:w=\"{NS_W}\">");
     x.push_str("<w:zoom w:percent=\"100\"/><w:embedTrueTypeFonts/>");
     x.push_str("<w:defaultTabStop w:val=\"709\"/><w:autoHyphenation w:val=\"false\"/>");
     x.push_str("<w:characterSpacingControl w:val=\"doNotCompress\"/>");
-    x.push_str("<w:updateFields w:val=\"true\"/>");
+    if p.doc.contents && !p.doc.toc.is_empty() {
+        x.push_str("<w:updateFields w:val=\"true\"/>");
+    }
     x.push_str(
         "<w:compat><w:compatSetting w:name=\"compatibilityMode\" w:uri=\"http://schemas.microsoft.com/office/word\" w:val=\"15\"/></w:compat>",
     );
