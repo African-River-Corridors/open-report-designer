@@ -88,9 +88,19 @@ fn an_unknown_block_type_is_refused() {
 #[test]
 fn another_format_version_is_refused_at_ord() {
     let mut v = minimal();
-    v["ord"] = "0.2".into();
+    v["ord"] = "0.3".into();
     let err = parse_value(&v).unwrap_err();
     assert_eq!((err[0].code, err[0].path.as_str()), ("ORD001", "/ord"));
+    assert!(err[0].message.contains("\"0.1\" and \"0.2\""), "{}", err[0].message);
+}
+
+#[test]
+fn both_format_versions_are_read() {
+    for version in ["0.1", "0.2"] {
+        let mut v = minimal();
+        v["ord"] = version.into();
+        assert!(parse_value(&v).is_ok(), "{version}");
+    }
 }
 
 #[test]

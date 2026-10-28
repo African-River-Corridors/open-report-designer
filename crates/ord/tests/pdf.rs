@@ -119,9 +119,11 @@ fn table_and_figure_atoms(r: &Resolved) -> Vec<String> {
             match b {
                 RBlock::Section(s) => walk(&s.body, out),
                 RBlock::Table(t) => {
-                    out.push(t.caption_text());
+                    out.extend(t.caption_text());
                     out.extend(t.columns.iter().map(|c| c.header()));
-                    out.extend(t.rows.iter().flatten().cloned());
+                    out.extend(
+                        t.rows.iter().flatten().map(|c| ord::markdown::plain(ord::resolve::cell_inlines(c))),
+                    );
                 }
                 RBlock::Figure(f) => {
                     out.push(f.caption_text());

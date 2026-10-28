@@ -1,21 +1,22 @@
 //! Reading a document from JSON (spec 0001 §11.1 `parse`).
 
 use crate::finding::Finding;
-use crate::model::{Document, FORMAT_VERSION};
+use crate::model::{Document, FORMAT_VERSIONS};
 
 /// Reads a document. Bad JSON, a wrong type, an unknown field or an unsupported format version gives one
 /// `ORD001` finding whose path points at the problem.
 pub fn parse(json: &str) -> Result<Document, Vec<Finding>> {
     parse_as::<Document>(json).and_then(|doc| {
-        if doc.ord == FORMAT_VERSION {
+        if FORMAT_VERSIONS.contains(&doc.ord.as_str()) {
             Ok(doc)
         } else {
             Err(vec![Finding::error(
                 "ORD001",
                 "/ord",
                 format!(
-                    "format version {:?} is not supported; this engine reads {FORMAT_VERSION:?}",
-                    doc.ord
+                    "format version {:?} is not supported; this engine reads {}",
+                    doc.ord,
+                    FORMAT_VERSIONS.map(|v| format!("{v:?}")).join(" and ")
                 ),
             )])
         }

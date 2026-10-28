@@ -13,9 +13,9 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use crate::markdown::{Inline, MdBlock};
-use crate::model::{Align, MediaType};
-use crate::render::Prepared;
-use crate::resolve::{RBlock, RFigure, RTable};
+use crate::model::{Align, CoverLayout, MediaType};
+use crate::render::{CONTROL, Prepared};
+use crate::resolve::{RBlock, RFigure, RTable, cell_inlines};
 use crate::template::Colour;
 
 /// The Typst source and the virtual files it uses.
@@ -130,6 +130,9 @@ pub fn markup(p: &Prepared) -> Markup {
         let ext = match a.media_type {
             MediaType::Png => "png",
             MediaType::Svg => "svg",
+            MediaType::Jpeg => "jpg",
+            // Fonts go to the world's font book, not to a virtual file.
+            MediaType::Font => continue,
         };
         let path = format!("/a{i}.{ext}");
         files.push((path.clone(), a.bytes.clone()));
@@ -146,16 +149,21 @@ pub fn markup(p: &Prepared) -> Markup {
     let mut w = W { p, o: String::with_capacity(64 * 1024), paths, anchors, toc };
     w.preamble(date);
     if p.template.cover {
-        w.cover();
+        match p.template.cover_layout {
+            CoverLayout::Classic => w.cover(),
+            CoverLayout::Photo => w.photo_cover(),
+        }
     } else {
         let _ = writeln!(
             w.o,
             "#block(below: 1.5em)[#text(font: {}, size: 2.4em)[{}]]\n",
-            lit(p.template.heading_font),
+            lit(&p.template.heading_font),
             esc(&d.title)
         );
     }
-    w.control();
+    if p.template.control_page {
+        w.control();
+    }
     if d.contents && !d.toc.is_empty() {
         w.heading(1, false, "Contents", None);
         w.o.push_str("#outline(title: none, depth: 3)\n#pagebreak(weak: true)\n\n");
@@ -210,20 +218,35 @@ impl W<'_> {
         let _ = writeln!(
             o,
             "#set text(font: {}, size: {}pt, fill: {}, lang: {}{region}, hyphenate: false)",
-            lit(t.body_font),
+            lit(&t.body_font),
             num(t.body_size_pt.into()),
             rgb(t.ink),
             lit(&lang)
         );
         o.push_str("#set par(justify: false)\n");
         o.push_str("#set heading(numbering: none)\n");
-        let head = lit(t.heading_font);
-        let _ = writeln!(o, "#show heading: set text(font: {head}, weight: \"regular\")");
+        let head = lit(&t.heading_font);
+        let weight = if t.heading_bold { "bold" } else { "regular" };
+        let fill =
+            if t.heading_ink == t.ink { String::new() } else { format!(", fill: {}", rgb(t.heading_ink)) };
+        let _ = writeln!(o, "#show heading: set text(font: {head}, weight: \"{weight}\"{fill})");
         o.push_str("#show heading: set block(above: 1.6em, below: 0.8em)\n");
-        o.push_str("#show heading.where(level: 1): set text(size: 1.6em)\n");
-        o.push_str("#show heading.where(level: 2): set text(size: 1.3em)\n");
-        o.push_str("#show heading.where(level: 3): set text(size: 1.1em)\n");
-        o.push_str("#show heading.where(level: 4): set text(size: 1em, style: \"italic\")\n");
+        // The 0.1 sizes are relative to Typst's own heading sizes; a template's sizes are points.
+        let sizes = match t.heading_sizes_pt {
+            Some(s) => s.map(|v| format!("{}pt", num(v.into()))),
+            None => ["1.6em", "1.3em", "1.1em", "1em"].map(String::from),
+        };
+        for (i, size) in sizes.iter().enumerate() {
+            let italic = if i == 3 { ", style: \"italic\"" } else { "" };
+            let _ = writeln!(o, "#show heading.where(level: {}): set text(size: {size}{italic})", i + 1);
+        }
+        if let Some(r) = t.heading_rule {
+            let _ = writeln!(
+                o,
+                "#show heading.where(level: 1): it => block(width: 100%, above: 1.6em, below: 0.8em, stroke: (bottom: 1.2pt + {}), inset: (bottom: 3pt))[#it.body]",
+                rgb(r)
+            );
+        }
         let _ = writeln!(o, "#show raw: set text(font: {}, size: 0.9em)", lit(t.mono_font));
         o.push_str("#show outline.entry.where(level: 1): set block(above: 0.9em)\n");
         let rule = rgb(t.rule);
@@ -234,12 +257,34 @@ impl W<'_> {
         let foot = p.footer_left();
         let foot = if foot.is_empty() { String::new() } else { esc(&foot) };
         let (pg, of) = crate::render::PAGE_OF;
+        let header = if t.running_head {
+            format!(
+                "block(width: 100%, stroke: (bottom: 0.5pt + {rule}), inset: (bottom: 3pt))[#set text(size: 8pt, fill: {ink2})\n{}#h(1fr){furniture}]",
+                esc(&p.header_left())
+            )
+        } else {
+            "none".into()
+        };
+        // The foot is a grid, so the left text may wrap without pushing the page number off its line.
+        let middle = p.footer_middle().map(|m| esc(&m)).unwrap_or_default();
+        let page_of = format!(
+            "#context [{}#str(here().page()){}#str(counter(page).final().first())]",
+            esc(pg),
+            esc(of)
+        );
+        let foot_line = if p.grid_foot() {
+            format!(
+                "#grid(columns: (40%, 20%, 40%), align: (left, center, right), [{foot}], [{middle}], [{page_of}])"
+            )
+        } else {
+            format!("{foot}#h(1fr){page_of}")
+        };
         let _ = writeln!(
             o,
             "#set page(width: {}mm, height: {}mm, margin: (top: {}mm, bottom: {}mm, left: {}mm, right: {}mm), \
              fill: {}, \
-             header: block(width: 100%, stroke: (bottom: 0.5pt + {rule}), inset: (bottom: 3pt))[#set text(size: 8pt, fill: {ink2})\n{}#h(1fr){furniture}], \
-             footer: block(width: 100%, stroke: (top: 0.5pt + {rule}), inset: (top: 3pt))[#set text(size: 8pt, fill: {ink2})\n{foot}#h(1fr)#context [{}#str(here().page()){}#str(counter(page).final().first())]])",
+             header: {header}, \
+             footer: block(width: 100%, stroke: (top: 0.5pt + {rule}), inset: (top: 3pt))[#set text(size: 8pt, fill: {ink2})\n{foot_line}])",
             num(t.page_width_mm.into()),
             num(t.page_height_mm.into()),
             num(t.margin_top_mm.into()),
@@ -247,9 +292,6 @@ impl W<'_> {
             num(t.margin_left_mm.into()),
             num(t.margin_right_mm.into()),
             rgb(t.body_paper),
-            esc(&p.header_left()),
-            esc(pg),
-            esc(of),
         );
         o.push('\n');
     }
@@ -271,7 +313,7 @@ impl W<'_> {
             "#block(below: 6mm)[#text(size: 0.85em, tracking: 0.2em)[#upper({})]]",
             lit(&d.control.class_name)
         );
-        let head = lit(t.heading_font);
+        let head = lit(&t.heading_font);
         let _ = writeln!(self.o, "#block(below: 4mm)[#text(font: {head}, size: 2.6em)[{}]]", esc(&d.title));
         if let Some(s) = &d.subtitle {
             let _ = writeln!(
@@ -310,11 +352,131 @@ impl W<'_> {
         self.o.push_str(")]\n]\n\n");
     }
 
+    /// The photo cover (spec 0002 §4): a photograph across the head of the page, then on the cover paper a
+    /// short accent rule, the title, the subtitle in the accent, the summary on a card, the logo strip on a
+    /// card, and the control block. Its foot holds the number and revision, and the sensitivity.
+    fn photo_cover(&mut self) {
+        let p = self.p;
+        let d = &p.doc;
+        let t = &p.template;
+        let (ink, accent, card) = (rgb(t.cover_ink), rgb(t.cover_accent), rgb(t.card_ground));
+        let _ = writeln!(
+            self.o,
+            "#page(fill: {}, margin: (top: 0mm, bottom: {}mm, left: {}mm, right: {}mm), header: none, \
+             footer: [#set text(size: 7.5pt, fill: {accent})\n{}#h(1fr){}])[",
+            rgb(t.paper),
+            num(t.margin_bottom_mm.into()),
+            num(t.margin_left_mm.into()),
+            num(t.margin_right_mm.into()),
+            esc(&p.header_left()),
+            esc(&d.control.sensitivity),
+        );
+        let _ = writeln!(self.o, "#set text(fill: {ink})");
+        let band = f64::from(t.cover_image_height_mm);
+        match d.cover_image.as_ref().and_then(|(id, alt)| self.asset_path(id).map(|p| (p.to_string(), alt))) {
+            Some((path, alt)) => {
+                let _ = writeln!(
+                    self.o,
+                    "#place(top + left, dx: -{}mm)[#image({}, width: {}mm, height: {}mm, fit: \"cover\", alt: {})]\n#v({}mm)",
+                    num(t.margin_left_mm.into()),
+                    lit(&path),
+                    num(t.page_width_mm.into()),
+                    num(band),
+                    lit(alt),
+                    num(band + 12.0),
+                );
+            }
+            None => {
+                let _ = writeln!(self.o, "#v({}mm)", num(f64::from(t.margin_top_mm)));
+            }
+        }
+        let head = lit(&t.heading_font);
+        let weight = if t.heading_bold { "bold" } else { "regular" };
+        let _ = writeln!(self.o, "#block(width: 14mm, height: 1.5pt, fill: {accent}, below: 5mm)[]");
+        let _ = writeln!(
+            self.o,
+            "#block(below: 4mm)[#set par(leading: 0.45em)\n#text(font: {head}, weight: \"{weight}\", size: 25pt)[{}]]",
+            esc(&d.title)
+        );
+        for line in [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten() {
+            let _ =
+                writeln!(self.o, "#block(below: 2mm)[#text(size: 0.82em, fill: {accent})[{}]]", esc(line));
+        }
+        let card_open = |o: &mut String| {
+            let _ = writeln!(
+                o,
+                "#block(width: 100%, fill: {card}, radius: 1.5mm, inset: (x: 6mm, y: 5mm), above: 5mm, below: 0mm)[#set text(fill: {})",
+                rgb(t.ink)
+            );
+        };
+        if let Some(s) = &d.summary {
+            card_open(&mut self.o);
+            self.md_blocks(s);
+            self.o.push_str("]\n");
+        }
+        if !d.cover_logos.is_empty() {
+            card_open(&mut self.o);
+            let n = d.cover_logos.len();
+            let _ = writeln!(
+                self.o,
+                "#grid(columns: ({}), align: center + horizon, stroke: (x, _) => if x > 0 {{ (left: 0.5pt + {}) }},",
+                vec!["1fr"; n].join(", ") + if n == 1 { "," } else { "" },
+                rgb(t.rule)
+            );
+            for l in &d.cover_logos {
+                self.o.push_str("  [");
+                if let Some(path) = self.asset_path(&l.asset).map(str::to_string) {
+                    let _ = write!(
+                        self.o,
+                        "#block(height: 10mm, below: 2mm)[#align(center + horizon)[#image({}, height: 9mm, alt: {})]]",
+                        lit(&path),
+                        lit(&l.name)
+                    );
+                }
+                let _ = write!(self.o, "#block(below: 1mm)[#text(size: 0.8em)[#strong[{}]]]", esc(&l.name));
+                if let Some(r) = &l.role {
+                    let _ = write!(
+                        self.o,
+                        "#block[#text(size: 0.62em, tracking: 0.08em, fill: {})[#upper({})]]",
+                        rgb(t.ink_2),
+                        lit(r)
+                    );
+                }
+                self.o.push_str("],\n");
+            }
+            self.o.push_str(")]\n");
+        }
+        let rows = p.cover_rows();
+        if !rows.is_empty() {
+            let line = format!("0.5pt + {}", rgb(t.cover_accent.over(t.paper, 0.45)));
+            let label_ink = rgb(t.cover_ink.over(t.paper, 0.65));
+            let _ = writeln!(
+                self.o,
+                "#block(width: 100%, above: 6mm, stroke: {line}, radius: 1mm, clip: true)[#table(columns: (35%, 1fr), stroke: (bottom: {line}), inset: (x: 3mm, y: 2.2mm),"
+            );
+            let _ = writeln!(
+                self.o,
+                "  table.cell(colspan: 2)[#text(size: 0.72em, tracking: 0.12em, fill: {accent})[#strong[#upper({})]]],",
+                lit(CONTROL)
+            );
+            for (l, v) in &rows {
+                let _ = writeln!(
+                    self.o,
+                    "  [#text(size: 0.72em, tracking: 0.08em, fill: {label_ink})[#upper({})]], [#text(size: 0.9em)[#strong[{}]]],",
+                    lit(l),
+                    esc(v)
+                );
+            }
+            self.o.push_str(")]\n");
+        }
+        self.o.push_str("]\n\n");
+    }
+
     fn control(&mut self) {
         let p = self.p;
         let c = &p.doc.control;
         let t = &p.template;
-        self.heading(1, false, "Document control", None);
+        self.heading(1, false, CONTROL, None);
         let _ = writeln!(
             self.o,
             "#table(columns: (30%, 1fr), stroke: (top: none, left: none, right: none, bottom: 0.5pt + {}), inset: (x: 0.5em, y: 0.4em),",
@@ -366,11 +528,11 @@ impl W<'_> {
         for b in bs {
             match b {
                 RBlock::Section(s) => {
-                    if s.level == 1 {
+                    if s.level == 1 && self.p.template.section_page_break {
                         self.o.push_str("#pagebreak(weak: true)\n");
                     }
                     let outlined = self.toc.contains(s.anchor.as_str());
-                    self.heading(s.level, outlined, &s.heading(), Some(&s.anchor));
+                    self.heading(s.level, outlined, &self.p.heading(s), Some(&s.anchor));
                     self.blocks(&s.body);
                 }
                 RBlock::Prose(md) => self.md_blocks(md),
@@ -388,7 +550,7 @@ impl W<'_> {
                     let _ = writeln!(
                         self.o,
                         "#block(below: 0.6em)[#text(font: {}, size: 1.15em)[{}]]",
-                        lit(t.heading_font),
+                        lit(&t.heading_font),
                         esc(&db.title)
                     );
                     if !db.items.is_empty() {
@@ -410,6 +572,11 @@ impl W<'_> {
 
     /// Opens a `#table(` call with the template's rules and header ground. The caller closes it.
     fn table_open(&mut self, aligns: &[Align], columns: Option<&str>) {
+        self.table_open_with(aligns, columns, 1);
+    }
+
+    /// `table_open` with `header_rows` rows on the header ground (none for 0).
+    fn table_open_with(&mut self, aligns: &[Align], columns: Option<&str>, header_rows: usize) {
         let t = &self.p.template;
         let aligns: Vec<&str> = aligns
             .iter()
@@ -427,7 +594,7 @@ impl W<'_> {
             if aligns.is_empty() { "left + top".to_string() } else { format!("({},)", aligns.join(", ")) };
         let _ = writeln!(
             self.o,
-            "#table(columns: {cols}, align: {al}, fill: (_, y) => if y == 0 {{ {} }}, stroke: (top: none, left: none, right: none, bottom: 0.5pt + {}), inset: (x: 0.5em, y: 0.35em),",
+            "#table(columns: {cols}, align: {al}, fill: (_, y) => if y < {header_rows} {{ {} }}, stroke: (top: none, left: none, right: none, bottom: 0.5pt + {}), inset: (x: 0.5em, y: 0.35em),",
             rgb(t.accent_ground),
             rgb(t.rule)
         );
@@ -436,21 +603,65 @@ impl W<'_> {
     fn table(&mut self, t: &RTable) {
         let aligns: Vec<Align> = t.columns.iter().map(|c| c.align).collect();
         self.o.push_str("#block(width: 100%, above: 1.2em, below: 1.2em)[\n");
-        let _ = writeln!(self.o, "#block(below: 0.5em, sticky: true)[#strong[{}]]", esc(&t.caption_text()));
+        if let Some(caption) = t.caption_text() {
+            let _ = writeln!(self.o, "#block(below: 0.5em, sticky: true)[#strong[{}]]", esc(&caption));
+        }
         if self.p.template.table_tabular_figures {
             self.o.push_str("#set text(number-width: \"tabular\")\n");
         }
-        self.table_open(&aligns, None);
-        self.o.push_str("  table.header(repeat: true, ");
-        for c in &t.columns {
-            let _ = write!(self.o, "[#strong[{}]], ", esc(&c.header()));
+        let header_rows = match (t.header, t.groups.is_empty()) {
+            (false, _) => 0,
+            (true, true) => 1,
+            (true, false) => 2,
+        };
+        let widths = self.p.column_widths(t).map(|w| {
+            let parts: Vec<String> = w.iter().map(|f| format!("{}%", num(f * 100.0))).collect();
+            format!("({}{})", parts.join(", "), if parts.len() == 1 { "," } else { "" })
+        });
+        self.table_open_with(&aligns, widths.as_deref(), header_rows);
+        let head_ink = rgb(self.p.template.table_header_ink);
+        if t.header {
+            self.o.push_str("  table.header(repeat: true, ");
+            // The group row, in column order: a titled group spans its columns; a column under a group with
+            // no title has its own title spanning both rows. Then the other column titles. Typst places each
+            // cell in the next free slot, so this is the order the HTML and Word writers use too.
+            let lone = |i: usize| t.group_of(i).is_some_and(|(g, _)| t.groups[g].0.is_empty());
+            let head = |s: &str| format!("#text(fill: {head_ink})[#strong[{}]]", esc(s));
+            if !t.groups.is_empty() {
+                for (i, c) in t.columns.iter().enumerate() {
+                    match t.group_of(i) {
+                        Some((g, first)) if !t.groups[g].0.is_empty() => {
+                            if first == i {
+                                let (title, span) = &t.groups[g];
+                                let _ = write!(
+                                    self.o,
+                                    "table.cell(colspan: {span}, align: center + top)[{}], ",
+                                    head(title)
+                                );
+                            }
+                        }
+                        _ => {
+                            let _ = write!(self.o, "table.cell(rowspan: 2)[{}], ", head(&c.header()));
+                        }
+                    }
+                }
+            }
+            for (i, c) in t.columns.iter().enumerate() {
+                if t.groups.is_empty() || !lone(i) {
+                    let _ = write!(self.o, "[{}], ", head(&c.header()));
+                }
+            }
+            self.o.push_str("),\n");
         }
-        self.o.push_str("),\n");
         let n = t.columns.len();
         for row in &t.rows {
             self.o.push(' ');
             for i in 0..n {
-                let _ = write!(self.o, " [{}],", row.get(i).map(|c| esc(c)).unwrap_or_default());
+                self.o.push_str(" [");
+                if let Some(c) = row.get(i) {
+                    self.inlines(cell_inlines(c));
+                }
+                self.o.push_str("],");
             }
             self.o.push('\n');
         }

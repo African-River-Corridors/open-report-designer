@@ -9,7 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::finding::Finding;
-use crate::model::{Appendix, AssetSource, Block, Control, Document, Section, TemplateOverrides};
+use crate::model::{
+    Appendix, AssetSource, Block, Control, CoverImage, CoverLogo, DataItem, Document, Section,
+    TemplateOverrides,
+};
 use crate::register::{Register, Stage};
 
 /// A document without its body and appendices, plus the chapter ids that make them.
@@ -32,6 +35,14 @@ pub struct Manifest {
     pub notice: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contents: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image: Option<CoverImage>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cover_logos: Vec<CoverLogo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_details: Option<Vec<DataItem>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footer: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub assets: BTreeMap<String, AssetSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -145,6 +156,10 @@ pub fn assemble(
         summary: m.summary,
         notice: m.notice,
         contents: m.contents,
+        cover_image: m.cover_image,
+        cover_logos: m.cover_logos,
+        cover_details: m.cover_details,
+        footer: m.footer,
         body: body_chapters.iter().map(|c| section(c)).collect(),
         appendices: appendix_chapters
             .iter()

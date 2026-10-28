@@ -22,9 +22,9 @@ use std::fmt::Write as _;
 
 use crate::finding::Finding;
 use crate::markdown::{Inline, MdBlock};
-use crate::model::{Align, MediaType};
-use crate::render::{PAGE_OF, Prepared};
-use crate::resolve::{ControlView, RBlock, RDataBox, RFigure, RTable, heading_text};
+use crate::model::{Align, CoverLayout, MediaType};
+use crate::render::{CONTROL, PAGE_OF, Prepared};
+use crate::resolve::{ControlView, RBlock, RDataBox, RFigure, RTable, cell_inlines};
 
 use parts::{DECL, REL};
 
@@ -65,6 +65,8 @@ pub fn write(p: &Prepared) -> Result<Vec<u8>, Vec<Finding>> {
     .enumerate()
     .map(|(i, (kind, target))| (format!("rId{}", i + 1), format!("{REL}/{kind}"), target.to_string(), false))
     .collect();
+    let cover_foot = w.cover_footer_rid.is_some();
+    let jpeg = w.media.iter().any(|(name, _)| name.ends_with(".jpeg"));
     doc_rels.extend(w.rels.iter().cloned());
 
     // The embedded fonts.
@@ -83,7 +85,7 @@ pub fn write(p: &Prepared) -> Result<Vec<u8>, Vec<Finding>> {
 
     let xml = |name: &str, s: String| zip::Entry { name: name.into(), data: s.into_bytes(), deflate: true };
     let mut entries = vec![
-        xml("[Content_Types].xml", parts::content_types()),
+        xml("[Content_Types].xml", parts::content_types(cover_foot, jpeg)),
         xml("_rels/.rels", parts::package_rels()),
         xml("docProps/core.xml", parts::core(p)),
         xml("docProps/app.xml", parts::app(p)),
@@ -97,6 +99,9 @@ pub fn write(p: &Prepared) -> Result<Vec<u8>, Vec<Finding>> {
         xml("word/header1.xml", w.header()),
         xml("word/footer1.xml", w.footer()),
     ];
+    if cover_foot {
+        entries.push(xml("word/footer2.xml", w.cover_footer()));
+    }
     for (name, data) in std::mem::take(&mut w.media) {
         let deflate = name.ends_with(".svg");
         entries.push(zip::Entry { name, data, deflate });
@@ -269,6 +274,8 @@ struct Writer<'a, 'p> {
     ordered: Vec<(u8, u64)>,
     /// The last thing written was a table (two tables in a row would merge).
     after_table: bool,
+    /// The relationship of the photo cover's own footer, once the cover asks for it.
+    cover_footer_rid: Option<String>,
     errors: Vec<Finding>,
 }
 
@@ -285,6 +292,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             next_shape: 1,
             ordered: Vec::new(),
             after_table: false,
+            cover_footer_rid: None,
             errors: Vec::new(),
         };
         w.name_bookmarks();
@@ -372,14 +380,22 @@ impl<'a, 'p> Writer<'a, 'p> {
         }
     }
 
+    /// The style of a table's header cells: "TableHead" when the template gives the head its own ink.
+    fn head_style(&self) -> &'static str {
+        let t = &self.p.template;
+        if t.table_header_ink == t.ink { "TableHeader" } else { "TableHead" }
+    }
+
     fn sect_pr(&self, running: bool) -> String {
         let t = &self.p.template;
         let mut x = String::from("<w:sectPr>");
         if running {
-            let _ = write!(
-                x,
-                "<w:headerReference w:type=\"default\" r:id=\"{RID_HEADER}\"/><w:footerReference w:type=\"default\" r:id=\"{RID_FOOTER}\"/>"
-            );
+            if t.running_head {
+                let _ = write!(x, "<w:headerReference w:type=\"default\" r:id=\"{RID_HEADER}\"/>");
+            }
+            let _ = write!(x, "<w:footerReference w:type=\"default\" r:id=\"{RID_FOOTER}\"/>");
+        } else if let Some(rid) = &self.cover_footer_rid {
+            let _ = write!(x, "<w:footerReference w:type=\"default\" r:id=\"{rid}\"/>");
         }
         let _ = write!(
             x,
@@ -402,12 +418,17 @@ impl<'a, 'p> Writer<'a, 'p> {
         let p = self.p;
         let d = &p.doc;
         if p.template.cover {
-            self.cover();
+            match p.template.cover_layout {
+                CoverLayout::Classic => self.cover(),
+                CoverLayout::Photo => self.photo_cover(),
+            }
         } else {
             let t = run(&d.title, "");
             self.para(&PPr::style("Title"), &t);
         }
-        self.control();
+        if p.template.control_page {
+            self.control();
+        }
         if d.contents && !d.toc.is_empty() {
             self.contents();
         }
@@ -502,17 +523,21 @@ impl<'a, 'p> Writer<'a, 'p> {
     fn control(&mut self) {
         let p = self.p;
         let c = &p.doc.control;
-        self.para(&PPr::style("FrontHeading"), &run("Document control", ""));
-        let rows: Vec<Vec<String>> = c.rows().into_iter().map(|(l, v)| vec![l.to_string(), v]).collect();
+        self.para(&PPr::style("FrontHeading"), &run(CONTROL, ""));
+        let rows: Vec<Vec<String>> =
+            c.rows().into_iter().map(|(l, v)| vec![run(l, ""), run(&v, "")]).collect();
         self.grid_table(&[0.3, 0.7], None, &rows, &[Align::Left, Align::Left], true);
         if !c.history.is_empty() {
             self.para(&PPr::style("FrontHeading"), &run("Revision history", ""));
-            let head: Vec<String> = ControlView::HISTORY_COLUMNS.iter().map(|s| s.to_string()).collect();
+            let head: Vec<String> = ControlView::HISTORY_COLUMNS.iter().map(|s| run(s, "")).collect();
             let rows: Vec<Vec<String>> = c
                 .history
                 .iter()
                 .map(|e| {
-                    vec![e.revision.clone(), e.date.clone(), p.status_label(&e.status), e.description.clone()]
+                    [e.revision.clone(), e.date.clone(), p.status_label(&e.status), e.description.clone()]
+                        .iter()
+                        .map(|s| run(s, ""))
+                        .collect()
                 })
                 .collect();
             self.grid_table(&[0.14, 0.18, 0.2, 0.48], Some(&head), &rows, &[Align::Left; 4], false);
@@ -534,7 +559,7 @@ impl<'a, 'p> Writer<'a, 'p> {
                     "<w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> TOC \\o \"1-3\" \\h \\z \\u </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"separate\"/></w:r>",
                 );
             }
-            let text = run(&heading_text(e.number.as_deref(), &e.title), "");
+            let text = run(&self.p.toc_text(e), "");
             match self.bookmarks.get(&e.anchor) {
                 Some(name) => {
                     let _ = write!(
@@ -557,8 +582,8 @@ impl<'a, 'p> Writer<'a, 'p> {
             match b {
                 RBlock::Section(s) => {
                     let style = format!("Heading{}", s.level.clamp(1, 5));
-                    let content = self.bookmarked(&s.anchor, run(&s.heading(), ""));
-                    let page_break = top && s.level == 1;
+                    let content = self.bookmarked(&s.anchor, run(&self.p.heading(s), ""));
+                    let page_break = top && s.level == 1 && self.p.template.section_page_break;
                     self.para(&PPr { style: Some(&style), page_break, ..PPr::default() }, &content);
                     self.blocks(&s.body, false);
                 }
@@ -571,8 +596,8 @@ impl<'a, 'p> Writer<'a, 'p> {
     }
 
     /// A table with the report table's rules: an optional header row (repeated on each page, on the header
-    /// ground), then the rows. `widths` are fractions of the text width. With `label_column`, the first
-    /// column is bold (the document-control table).
+    /// ground), then the rows. Cells are run XML. `widths` are fractions of the text width. With
+    /// `label_column`, the first column is bold (the document-control table).
     fn grid_table(
         &mut self,
         widths: &[f64],
@@ -597,16 +622,16 @@ impl<'a, 'p> Writer<'a, 'p> {
             Align::Right => "<w:jc w:val=\"right\"/>",
         };
         let ground = parts::hex(self.p.template.accent_ground);
+        let head_style = self.head_style();
         if let Some(head) = head {
             self.x.push_str("<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>");
             for (i, h) in head.iter().enumerate() {
                 let _ = write!(
                     self.x,
                     "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/></w:tcPr>\
-                     <w:p><w:pPr><w:pStyle w:val=\"TableHeader\"/>{}</w:pPr>{}</w:p></w:tc>",
+                     <w:p><w:pPr><w:pStyle w:val=\"{head_style}\"/>{}</w:pPr>{h}</w:p></w:tc>",
                     cols.get(i).copied().unwrap_or(0),
                     jc(i),
-                    run(h, "")
                 );
             }
             self.x.push_str("</w:tr>");
@@ -617,10 +642,9 @@ impl<'a, 'p> Writer<'a, 'p> {
                 let style = if label_column && i == 0 { "TableHeader" } else { "TableText" };
                 let _ = write!(
                     self.x,
-                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"{style}\"/>{}</w:pPr>{}</w:p></w:tc>",
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"{style}\"/>{}</w:pPr>{cell}</w:p></w:tc>",
                     cols.get(i).copied().unwrap_or(0),
                     jc(i),
-                    run(cell, "")
                 );
             }
             self.x.push_str("</w:tr>");
@@ -629,14 +653,287 @@ impl<'a, 'p> Writer<'a, 'p> {
         self.after_table = true;
     }
 
+    /// A table with a group row above the column titles: a titled group spans its columns (`gridSpan`); a
+    /// column under an untitled group has its title span both header rows (`vMerge`). Both rows repeat.
+    fn grouped_table(&mut self, t: &RTable, widths: &[f64], rows: &[Vec<String>], aligns: &[Align]) {
+        let tw = twips(self.text_width_mm() as f32);
+        let cols: Vec<u32> = widths.iter().map(|f| (f64::from(tw) * f).round() as u32).collect();
+        let ground = parts::hex(self.p.template.accent_ground);
+        let head_style = self.head_style();
+        let jc = |a: Align| match a {
+            Align::Left => "",
+            Align::Centre => "<w:jc w:val=\"center\"/>",
+            Align::Right => "<w:jc w:val=\"right\"/>",
+        };
+        let cell = |w: u32, extra: &str, a: Align, content: &str| {
+            format!(
+                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/>{extra}<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/></w:tcPr>\
+                 <w:p><w:pPr><w:pStyle w:val=\"{head_style}\"/>{}</w:pPr>{content}</w:p></w:tc>",
+                jc(a)
+            )
+        };
+        self.before_table();
+        self.x.push_str(
+            "<w:tbl><w:tblPr><w:tblStyle w:val=\"ReportTable\"/><w:tblW w:w=\"5000\" w:type=\"pct\"/><w:tblLook w:val=\"0000\" w:firstRow=\"0\" w:lastRow=\"0\" w:firstColumn=\"0\" w:lastColumn=\"0\" w:noHBand=\"1\" w:noVBand=\"1\"/></w:tblPr><w:tblGrid>",
+        );
+        for c in &cols {
+            let _ = write!(self.x, "<w:gridCol w:w=\"{c}\"/>");
+        }
+        self.x.push_str("</w:tblGrid>");
+        // The group row.
+        self.x.push_str("<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>");
+        let mut i = 0;
+        for (title, span) in &t.groups {
+            let span = *span as usize;
+            if title.is_empty() {
+                for (c, w) in t.columns[i..i + span].iter().zip(&cols[i..i + span]) {
+                    let x = cell(*w, "<w:vMerge w:val=\"restart\"/>", c.align, &run(&c.header(), ""));
+                    self.x.push_str(&x);
+                }
+            } else {
+                let w: u32 = cols[i..i + span].iter().sum();
+                let x = cell(w, &format!("<w:gridSpan w:val=\"{span}\"/>"), Align::Centre, &run(title, ""));
+                self.x.push_str(&x);
+            }
+            i += span;
+        }
+        self.x.push_str("</w:tr>");
+        // The column-title row.
+        self.x.push_str("<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>");
+        for (j, c) in t.columns.iter().enumerate() {
+            let lone = t.group_of(j).is_some_and(|(g, _)| t.groups[g].0.is_empty());
+            let x = if lone {
+                cell(cols[j], "<w:vMerge/>", c.align, "")
+            } else {
+                cell(cols[j], "", c.align, &run(&c.header(), ""))
+            };
+            self.x.push_str(&x);
+        }
+        self.x.push_str("</w:tr>");
+        for row in rows {
+            self.x.push_str("<w:tr><w:trPr><w:cantSplit/></w:trPr>");
+            for (j, content) in row.iter().enumerate() {
+                let _ = write!(
+                    self.x,
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"TableText\"/>{}</w:pPr>{content}</w:p></w:tc>",
+                    cols.get(j).copied().unwrap_or(0),
+                    jc(aligns.get(j).copied().unwrap_or_default()),
+                );
+            }
+            self.x.push_str("</w:tr>");
+        }
+        self.x.push_str("</w:tbl>");
+        self.after_table = true;
+    }
+
+    /// A paragraph of an exact height, holding `content` (drawings anchored to the page). It spaces the
+    /// photo cover without depending on how Word treats space before at the top of a page.
+    fn spacer(&mut self, mm: f64, content: &str) {
+        let h = twips(mm.max(0.5) as f32);
+        let _ = write!(
+            self.x,
+            "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{h}\" w:lineRule=\"exact\"/><w:rPr><w:sz w:val=\"2\"/></w:rPr></w:pPr>{content}</w:p>"
+        );
+        self.after_table = false;
+    }
+
+    /// A one-cell table on a ground, for a card of the photo cover: `body` is written inside it.
+    fn card(&mut self, ground: &str, body: impl FnOnce(&mut Self)) {
+        let tw = twips(self.text_width_mm() as f32);
+        let _ = write!(
+            self.x,
+            "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>\
+             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m5}\" w:type=\"dxa\"/><w:left w:w=\"{m6}\" w:type=\"dxa\"/><w:bottom w:w=\"{m5}\" w:type=\"dxa\"/><w:right w:w=\"{m6}\" w:type=\"dxa\"/></w:tblCellMar>\
+             <w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"{tw}\"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{tw}\" w:type=\"dxa\"/>\
+             <w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/></w:tcPr>",
+            m5 = twips(5.0),
+            m6 = twips(6.0),
+        );
+        let before = self.x.len();
+        body(self);
+        if self.x.len() == before {
+            self.x.push_str("<w:p/>");
+        }
+        self.x.push_str("</w:tc></w:tr></w:tbl>");
+        self.after_table = true;
+    }
+
+    /// The photo cover (spec 0002 §4), laid out as the PDF writer lays it out: the cover paper behind the
+    /// page, the photograph across its head, an accent rule, the title, the meta lines, the summary card,
+    /// the logo card and the control block. The foot is the cover section's own footer.
+    fn photo_cover(&mut self) {
+        let p = self.p;
+        let d = &p.doc;
+        let t = &p.template;
+        let (pw, ph) = (f64::from(t.page_width_mm), f64::from(t.page_height_mm));
+        self.cover_footer_rid = Some(self.rel("footer", "footer2.xml", false));
+        let band = f64::from(t.cover_image_height_mm);
+        let mut anchors = {
+            let rid = self.media_part("png", image::pixel_png(t.paper));
+            let pic = Pic { png: rid, svg: None, aspect: 1.0 };
+            self.anchor_page(&pic, emu(pw), emu(ph), 0, true, None)
+        };
+        let has_image = if let Some((id, alt)) = d.cover_image.clone()
+            && let Some(pic) = self.pic(&id)
+        {
+            // Crop to fill the band, centred, as the PDF's `fit: "cover"` does.
+            let target = band / pw;
+            let crop = if pic.aspect > target {
+                let keep = target / pic.aspect;
+                let cut = ((1.0 - keep) / 2.0 * 100_000.0).round() as i64;
+                (cut, 0)
+            } else {
+                let keep = pic.aspect / target;
+                let cut = ((1.0 - keep) / 2.0 * 100_000.0).round() as i64;
+                (0, cut)
+            };
+            anchors.push_str(&self.anchor_page(&pic, emu(pw), emu(band), 1, true, Some((crop, alt))));
+            true
+        } else {
+            false
+        };
+        // The text starts 12 mm under the band (or at the top margin with no photograph).
+        let top = if has_image { band + 12.0 - f64::from(t.margin_top_mm) } else { 0.5 };
+        self.spacer(top, &anchors);
+        // The accent rule: a 14 mm by 1.5 pt bar.
+        let bar = {
+            let rid = self.media_part("png", image::pixel_png(t.cover_accent));
+            let pic = Pic { png: rid, svg: None, aspect: 1.0 };
+            self.inline(&pic, emu(14.0), emu(0.53), "Rule", "")
+        };
+        self.spacer(5.5, &bar);
+        self.para(&PPr::style("CoverTitle"), &run(&d.title, ""));
+        for line in [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten() {
+            self.para(&PPr::style("CoverMeta"), &run(line, ""));
+        }
+        let card = parts::hex(t.card_ground);
+        if let Some(s) = d.summary.clone() {
+            self.spacer(4.0, "");
+            self.card(&card, |w| w.md_blocks(&s, Ctx { style: "CardText", depth: 0 }));
+        }
+        if !d.cover_logos.is_empty() {
+            self.spacer(5.0, "");
+            self.logo_card(&card);
+        }
+        let rows = p.cover_rows();
+        if !rows.is_empty() {
+            self.spacer(6.0, "");
+            let tw = twips(self.text_width_mm() as f32);
+            let (c1, c2) =
+                ((f64::from(tw) * 0.35).round() as u32, tw - (f64::from(tw) * 0.35).round() as u32);
+            let line = parts::hex(t.cover_accent.over(t.paper, 0.45));
+            let b = format!("w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{line}\"");
+            let _ = write!(
+                self.x,
+                "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top {b}/><w:left {b}/><w:bottom {b}/><w:right {b}/><w:insideH {b}/><w:insideV w:val=\"nil\"/></w:tblBorders>\
+                 <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{m}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr>\
+                 <w:tblGrid><w:gridCol w:w=\"{c1}\"/><w:gridCol w:w=\"{c2}\"/></w:tblGrid>\
+                 <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{tw}\" w:type=\"dxa\"/><w:gridSpan w:val=\"2\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowsHead\"/></w:pPr>{}</w:p></w:tc></w:tr>",
+                run(CONTROL, ""),
+                m = twips(1.6),
+                x = twips(3.0),
+            );
+            for (l, v) in &rows {
+                let _ = write!(
+                    self.x,
+                    "<w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w=\"{c1}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowLabel\"/></w:pPr>{}</w:p></w:tc>\
+                     <w:tc><w:tcPr><w:tcW w:w=\"{c2}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"CoverRowValue\"/></w:pPr>{}</w:p></w:tc></w:tr>",
+                    run(l, ""),
+                    run(v, "")
+                );
+            }
+            self.x.push_str("</w:tbl>");
+            self.after_table = true;
+        }
+        let sect = self.sect_pr(false);
+        self.para(&PPr { sect: Some(sect), ..PPr::default() }, "");
+    }
+
+    /// The logo strip on a card: one column per logo, a rule between them, each a logo 9 mm high (narrower
+    /// when it would not fit its column), the name and the role.
+    fn logo_card(&mut self, ground: &str) {
+        let logos = self.p.doc.cover_logos.clone();
+        let n = logos.len() as u32;
+        let tw = twips(self.text_width_mm() as f32);
+        let col = tw / n;
+        let rule = parts::hex(self.p.template.rule);
+        let _ = write!(
+            self.x,
+            "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/>\
+             <w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{rule}\"/></w:tblBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/>\
+             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{m}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid>",
+            m = twips(5.0),
+            x = twips(3.0),
+        );
+        for _ in 0..n {
+            let _ = write!(self.x, "<w:gridCol w:w=\"{col}\"/>");
+        }
+        self.x.push_str("</w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>");
+        let max_w = f64::from(col) / 56.693 - 8.0; // the column, less its margins, in millimetres
+        for l in &logos {
+            let _ = write!(
+                self.x,
+                "<w:tc><w:tcPr><w:tcW w:w=\"{col}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/><w:vAlign w:val=\"center\"/></w:tcPr>"
+            );
+            if let Some(pic) = self.pic(&l.asset) {
+                let mut h = 9.0;
+                let mut w = h / pic.aspect;
+                if w > max_w {
+                    w = max_w;
+                    h = w * pic.aspect;
+                }
+                let drawing = self.inline(&pic, emu(w), emu(h), &l.name, &l.name);
+                // A 10 mm line, centred, as the PDF's 10 mm block.
+                let _ = write!(
+                    self.x,
+                    "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"exact\"/><w:jc w:val=\"center\"/></w:pPr>{drawing}</w:p>",
+                    twips(10.0)
+                );
+            }
+            let _ = write!(
+                self.x,
+                "<w:p><w:pPr><w:pStyle w:val=\"LogoName\"/></w:pPr>{}</w:p>",
+                run(&l.name, "")
+            );
+            if let Some(r) = &l.role {
+                let _ =
+                    write!(self.x, "<w:p><w:pPr><w:pStyle w:val=\"LogoRole\"/></w:pPr>{}</w:p>", run(r, ""));
+            }
+            self.x.push_str("</w:tc>");
+        }
+        self.x.push_str("</w:tr></w:tbl>");
+        self.after_table = true;
+    }
+
     fn table(&mut self, t: &RTable) {
-        let caption = self.bookmarked(&t.anchor, run(&t.caption_text(), ""));
-        self.para(&PPr::style("Caption"), &caption);
+        match t.caption_text() {
+            Some(c) => {
+                let caption = self.bookmarked(&t.anchor, run(&c, ""));
+                self.para(&PPr::style("Caption"), &caption);
+            }
+            // No caption: the bookmark sits in an empty paragraph, so a cross-reference still lands here.
+            None => {
+                let mark = self.bookmarked(&t.anchor, String::new());
+                if !mark.is_empty() {
+                    self.before_table();
+                    self.para(&PPr::style("TableNote"), &mark);
+                }
+            }
+        }
         let n = t.columns.len().max(1);
-        let widths = vec![1.0 / n as f64; n];
-        let head: Vec<String> = t.columns.iter().map(|c| c.header()).collect();
+        let widths = self.p.column_widths(t).unwrap_or_else(|| vec![1.0 / n as f64; n]);
         let aligns: Vec<Align> = t.columns.iter().map(|c| c.align).collect();
-        self.grid_table(&widths, Some(&head), &t.rows, &aligns, false);
+        let rows: Vec<Vec<String>> = t
+            .rows
+            .iter()
+            .map(|r| r.iter().map(|c| self.inlines(cell_inlines(c), Fmt::default())).collect())
+            .collect();
+        if t.header && !t.groups.is_empty() {
+            self.grouped_table(t, &widths, &rows, &aligns);
+        } else {
+            let head: Vec<String> = t.columns.iter().map(|c| run(&c.header(), "")).collect();
+            self.grid_table(&widths, t.header.then_some(head.as_slice()), &rows, &aligns, false);
+        }
         if let Some(notes) = &t.notes {
             self.md_blocks(notes, Ctx { style: "TableNote", depth: 0 });
         }
@@ -730,6 +1027,20 @@ impl<'a, 'p> Writer<'a, 'p> {
                     return None;
                 }
             },
+            MediaType::Jpeg => match crate::assets::jpeg_size(&a.bytes) {
+                Ok((w, h)) => {
+                    let png = self.media_part("jpeg", a.bytes.clone());
+                    Pic { png, svg: None, aspect: f64::from(h) / f64::from(w) }
+                }
+                Err(e) => {
+                    self.errors.push(asset_error(id, &e));
+                    return None;
+                }
+            },
+            MediaType::Font => {
+                self.errors.push(asset_error(id, "a font, not an image"));
+                return None;
+            }
             MediaType::Svg => {
                 let drawn = image::parse_svg(&a.bytes).and_then(|tree| {
                     let size = tree.size();
@@ -754,6 +1065,20 @@ impl<'a, 'p> Writer<'a, 'p> {
     }
 
     fn graphic(&mut self, pic: &Pic, cx: u64, cy: u64, name: &str, descr: &str) -> (u32, String) {
+        self.graphic_cropped(pic, cx, cy, name, descr, (0, 0))
+    }
+
+    /// A picture graphic; `crop` cuts (top and bottom, left and right) from each side, in thousandths of a
+    /// per cent of the picture.
+    fn graphic_cropped(
+        &mut self,
+        pic: &Pic,
+        cx: u64,
+        cy: u64,
+        name: &str,
+        descr: &str,
+        crop: (i64, i64),
+    ) -> (u32, String) {
         let id = self.next_shape;
         self.next_shape += 1;
         let ext = match &pic.svg {
@@ -765,12 +1090,16 @@ impl<'a, 'p> Writer<'a, 'p> {
         let g = format!(
             "<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic>\
              <pic:nvPicPr><pic:cNvPr id=\"{id}\" name=\"{n}\" descr=\"{d}\"/><pic:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></pic:cNvPicPr></pic:nvPicPr>\
-             <pic:blipFill><a:blip r:embed=\"{png}\">{ext}</a:blip><a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
+             <pic:blipFill><a:blip r:embed=\"{png}\">{ext}</a:blip>{src}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>\
              <pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"{cx}\" cy=\"{cy}\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr>\
              </pic:pic></a:graphicData></a:graphic>",
             n = esc(name),
             d = esc(descr),
             png = pic.png,
+            src = match crop {
+                (0, 0) => String::new(),
+                (v, h) => format!("<a:srcRect l=\"{h}\" t=\"{v}\" r=\"{h}\" b=\"{v}\"/>"),
+            },
         );
         (id, g)
     }
@@ -789,13 +1118,33 @@ impl<'a, 'p> Writer<'a, 'p> {
 
     /// A picture at the top left of the page, the given size, behind the text, as a run.
     fn anchor_behind(&mut self, pic: &Pic, cx: u64, cy: u64) -> String {
-        let (id, g) = self.graphic(pic, cx, cy, "Paper", "");
+        self.anchor_page(pic, cx, cy, 0, true, None)
+    }
+
+    /// A picture at the top left of the page, the given size, as a run: `z` orders pictures behind the text
+    /// (higher is nearer the reader); `photo` gives a crop and alt text.
+    fn anchor_page(
+        &mut self,
+        pic: &Pic,
+        cx: u64,
+        cy: u64,
+        z: u32,
+        locked: bool,
+        photo: Option<((i64, i64), String)>,
+    ) -> String {
+        let (name, descr, crop) = match &photo {
+            Some((crop, alt)) => ("Photograph", alt.as_str(), *crop),
+            None => ("Paper", "", (0, 0)),
+        };
+        let (id, g) = self.graphic_cropped(pic, cx, cy, name, descr, crop);
         format!(
-            "<w:r><w:drawing><wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"0\" behindDoc=\"1\" locked=\"1\" layoutInCell=\"1\" allowOverlap=\"1\">\
+            "<w:r><w:drawing><wp:anchor distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\" simplePos=\"0\" relativeHeight=\"{z}\" behindDoc=\"1\" locked=\"{}\" layoutInCell=\"1\" allowOverlap=\"1\">\
              <wp:simplePos x=\"0\" y=\"0\"/><wp:positionH relativeFrom=\"page\"><wp:posOffset>0</wp:posOffset></wp:positionH>\
              <wp:positionV relativeFrom=\"page\"><wp:posOffset>0</wp:posOffset></wp:positionV><wp:extent cx=\"{cx}\" cy=\"{cy}\"/>\
-             <wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapNone/><wp:docPr id=\"{id}\" name=\"Paper\" descr=\"\"/>\
-             <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>{g}</wp:anchor></w:drawing></w:r>"
+             <wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/><wp:wrapNone/><wp:docPr id=\"{id}\" name=\"{name}\" descr=\"{}\"/>\
+             <wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>{g}</wp:anchor></w:drawing></w:r>",
+            u8::from(locked),
+            esc(descr),
         )
     }
 
@@ -903,19 +1252,60 @@ impl<'a, 'p> Writer<'a, 'p> {
         x
     }
 
-    /// `word/footer1.xml`: the organisation and notice on the left, "Page n of N" on the right.
+    /// `word/footer1.xml`: the foot text on the left, the sensitivity in the middle (when asked for) and
+    /// "Page n of N" on the right, in a borderless table of 40, 20 and 40 per cent under a rule, as the PDF
+    /// writer's grid, so a long left text wraps in its own column.
     fn footer(&self) -> String {
         let p = self.p;
-        let mut content = run(&p.footer_left(), "");
-        content.push_str("<w:r><w:tab/></w:r>");
-        content.push_str(&run(PAGE_OF.0, ""));
-        content.push_str("<w:fldSimple w:instr=\" PAGE \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
-        content.push_str(&run(PAGE_OF.1, ""));
-        content.push_str("<w:fldSimple w:instr=\" NUMPAGES \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
+        let mut page = run(PAGE_OF.0, "");
+        page.push_str("<w:fldSimple w:instr=\" PAGE \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
+        page.push_str(&run(PAGE_OF.1, ""));
+        page.push_str("<w:fldSimple w:instr=\" NUMPAGES \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
+        if !p.grid_foot() {
+            // The 0.1 foot: the text, a tab, the page number.
+            let content = format!("{}<w:r><w:tab/></w:r>{page}", run(&p.footer_left(), ""));
+            let mut x = String::from(DECL);
+            let _ = write!(
+                x,
+                "<w:ftr {NS_DOC}><w:p><w:pPr><w:pStyle w:val=\"Footer\"/></w:pPr>{content}</w:p></w:ftr>"
+            );
+            return x;
+        }
+        let middle = p.footer_middle().map(|m| run(&m, "")).unwrap_or_default();
+        let tw = twips(self.text_width_mm() as f32);
+        let side = (f64::from(tw) * 0.4).round() as u32;
+        let mid = tw - 2 * side;
+        let rule = parts::hex(p.template.rule);
+        let cell = |w: u32, jc: &str, content: &str| {
+            format!(
+                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"Footer\"/><w:pBdr/><w:jc w:val=\"{jc}\"/></w:pPr>{content}</w:p></w:tc>"
+            )
+        };
         let mut x = String::from(DECL);
         let _ = write!(
             x,
-            "<w:ftr {NS_DOC}><w:p><w:pPr><w:pStyle w:val=\"Footer\"/></w:pPr>{content}</w:p></w:ftr>"
+            "<w:ftr {NS_DOC}><w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{rule}\"/>\
+             <w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders><w:tblLayout w:type=\"fixed\"/>\
+             <w:tblCellMar><w:top w:w=\"57\" w:type=\"dxa\"/><w:left w:w=\"0\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"0\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr>\
+             <w:tblGrid><w:gridCol w:w=\"{side}\"/><w:gridCol w:w=\"{mid}\"/><w:gridCol w:w=\"{side}\"/></w:tblGrid><w:tr>{}{}{}</w:tr></w:tbl><w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"20\" w:lineRule=\"exact\"/></w:pPr></w:p></w:ftr>",
+            cell(side, "left", &run(&p.footer_left(), "")),
+            cell(mid, "center", &middle),
+            cell(side, "right", &page),
+        );
+        x
+    }
+
+    /// `word/footer2.xml`: the photo cover's foot, the number and revision on the left and the sensitivity
+    /// on the right, in the cover's accent.
+    fn cover_footer(&self) -> String {
+        let p = self.p;
+        let mut content = run(&p.header_left(), "");
+        content.push_str("<w:r><w:tab/></w:r>");
+        content.push_str(&run(&p.doc.control.sensitivity, ""));
+        let mut x = String::from(DECL);
+        let _ = write!(
+            x,
+            "<w:ftr {NS_DOC}><w:p><w:pPr><w:pStyle w:val=\"CoverFoot\"/></w:pPr>{content}</w:p></w:ftr>"
         );
         x
     }

@@ -21,7 +21,27 @@ use crate::render::Prepared;
 /// typesetter's message.
 pub fn write(p: &Prepared) -> Result<Vec<u8>, Vec<Finding>> {
     let m = markup::markup(p);
-    let world = world::OrdWorld::new(m.source, m.files, m.date);
+    let fonts: Vec<Vec<u8>> =
+        p.template.fonts.iter().filter_map(|id| p.assets.get(id)).map(|a| a.bytes.clone()).collect();
+    let world = world::OrdWorld::new(m.source, m.files, fonts, m.date);
+    // A family the world does not have would be swapped for another without a word. Refuse instead.
+    let missing: Vec<Finding> =
+        [("heading_font", &p.template.heading_font), ("body_font", &p.template.body_font)]
+            .into_iter()
+            .filter(|(_, f)| !world.has_family(f))
+            .map(|(field, f)| {
+                Finding::error(
+                    "ORD022",
+                    format!("/template/{field}"),
+                    format!(
+                        "the font family {f:?} is not bundled and no font asset in /template/fonts gives it"
+                    ),
+                )
+            })
+            .collect();
+    if !missing.is_empty() {
+        return Err(missing);
+    }
     let doc = typst::compile::<PagedDocument>(&world).output.map_err(|e| diagnostics(e.as_slice()))?;
     let options = typst_pdf::PdfOptions {
         ident: Smart::Auto,

@@ -65,11 +65,17 @@ pub fn collect(doc: &Document, supplied: &BTreeMap<String, Vec<u8>>) -> (Assets,
     (out, findings)
 }
 
-/// Checks that an asset's bytes are an image of its declared type: a PNG signature and header, or an SVG
-/// document (UTF-8 text whose root element is `svg`). Returns the image size in pixels when it is known.
+/// Checks that an asset's bytes are of its declared type: a PNG signature and header, a JPEG with a frame
+/// header, a font file (TrueType, OpenType or a collection), or an SVG document (UTF-8 text whose root
+/// element is `svg`). Returns the image size in pixels when it is known.
 pub fn validate(a: &Asset) -> Result<Option<(u32, u32)>, String> {
     match a.media_type {
         MediaType::Png => png_size(&a.bytes).map(Some),
+        MediaType::Jpeg => jpeg_size(&a.bytes).map(Some),
+        MediaType::Font => match a.bytes.get(..4) {
+            Some([0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf") => Ok(None),
+            _ => Err("not a TrueType or OpenType font, nor a font collection".into()),
+        },
         MediaType::Svg => {
             let text = std::str::from_utf8(&a.bytes).map_err(|_| "not UTF-8 text".to_string())?;
             let mut rest = text.trim_start_matches('\u{feff}').trim_start();
@@ -110,4 +116,39 @@ pub fn png_size(b: &[u8]) -> Result<(u32, u32), String> {
         return Err("a PNG of zero size".into());
     }
     Ok((w, h))
+}
+
+/// The width and height in a JPEG's first frame header (SOF0 to SOF15, less DHT, JPG and DAC).
+pub fn jpeg_size(b: &[u8]) -> Result<(u32, u32), String> {
+    if b.len() < 4 || b[0] != 0xff || b[1] != 0xd8 {
+        return Err("no JPEG start-of-image marker".into());
+    }
+    let mut i = 2;
+    while i + 4 <= b.len() {
+        if b[i] != 0xff {
+            return Err("a JPEG segment does not start with a marker".into());
+        }
+        let marker = b[i + 1];
+        if marker == 0xff {
+            i += 1; // fill byte
+            continue;
+        }
+        let len = usize::from(u16::from_be_bytes([b[i + 2], b[i + 3]]));
+        if (0xc0..=0xcf).contains(&marker) && !matches!(marker, 0xc4 | 0xc8 | 0xcc) {
+            if i + 9 > b.len() {
+                break;
+            }
+            let h = u32::from(u16::from_be_bytes([b[i + 5], b[i + 6]]));
+            let w = u32::from(u16::from_be_bytes([b[i + 7], b[i + 8]]));
+            if w == 0 || h == 0 {
+                return Err("a JPEG of zero size".into());
+            }
+            return Ok((w, h));
+        }
+        if len < 2 {
+            break;
+        }
+        i += 2 + len;
+    }
+    Err("no JPEG frame header".into())
 }

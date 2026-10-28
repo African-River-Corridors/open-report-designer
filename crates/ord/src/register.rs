@@ -86,6 +86,8 @@ pub enum RevisionForm {
     Letter,
     /// A whole number without leading zeros: `0`, `1`, `2`, ...
     Number,
+    /// (0.2) Any revision with no white space at its ends and none inside, such as `0.2` or `P01`.
+    Text,
 }
 
 impl RevisionForm {
@@ -97,6 +99,7 @@ impl RevisionForm {
             RevisionForm::Number => {
                 !b.is_empty() && b.iter().all(u8::is_ascii_digit) && (b.len() == 1 || b[0] != b'0')
             }
+            RevisionForm::Text => !revision.is_empty() && !revision.chars().any(char::is_whitespace),
         }
     }
 
@@ -104,6 +107,7 @@ impl RevisionForm {
         match self {
             RevisionForm::Letter => "a letter revision (A to Z, then AA to ZZ)",
             RevisionForm::Number => "a number revision (0, 1, 2, ... without leading zeros)",
+            RevisionForm::Text => "a revision with no spaces (such as 0.2)",
         }
     }
 }
