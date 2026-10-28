@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "ord": {
-      "description": "Format version. v0.1 accepts \"0.1\" only.",
+      "description": "Format version: \"0.1\" or \"0.2\". Fields marked \"(0.2)\" need \"0.2\".",
       "type": "string"
     },
     "class": {
@@ -57,6 +57,41 @@
       "description": "Table of contents. Default from the document class.",
       "type": [
         "boolean",
+        "null"
+      ]
+    },
+    "cover_image": {
+      "description": "(0.2) A photograph across the head of the cover.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CoverImage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cover_logos": {
+      "description": "(0.2) A strip of logos on the cover, each with a name and a role, such as the parties to a report.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CoverLogo"
+      }
+    },
+    "cover_details": {
+      "description": "(0.2) The rows of the cover's control block, in place of number, revision, date and status. An empty\nlist leaves the block out.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/DataItem"
+      }
+    },
+    "footer": {
+      "description": "(0.2) The text on the left of the running foot, in place of the organisation and the notice.",
+      "type": [
+        "string",
         "null"
       ]
     },
@@ -201,6 +236,68 @@
         "description"
       ]
     },
+    "CoverImage": {
+      "description": "A photograph across the head of the cover (0.2).",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "description": "An asset id.",
+          "type": "string"
+        },
+        "alt": {
+          "description": "Alt text. Required and not empty.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "asset",
+        "alt"
+      ]
+    },
+    "CoverLogo": {
+      "description": "One logo of the cover's logo strip (0.2).",
+      "type": "object",
+      "properties": {
+        "asset": {
+          "description": "An asset id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "The name printed under the logo. Also its alt text.",
+          "type": "string"
+        },
+        "role": {
+          "description": "A role printed under the name, such as \"Client\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "asset",
+        "name"
+      ]
+    },
+    "DataItem": {
+      "description": "One line of a data box.",
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "value"
+      ]
+    },
     "Block": {
       "description": "A block of the document (spec 0001 §3.3).\n\nRead by hand (`impl Deserialize` below) rather than by serde's internally tagged enum, which buffers the\nblock and so loses the path to an error inside it.",
       "oneOf": [
@@ -258,7 +355,7 @@
           ]
         },
         {
-          "description": "A table, numbered \"Table n\".",
+          "description": "A table, numbered \"Table n\" when it has a caption.",
           "type": "object",
           "properties": {
             "type": {
@@ -272,7 +369,25 @@
               ]
             },
             "caption": {
-              "type": "string"
+              "description": "The caption. Required in 0.1. (0.2) Optional: a table with no caption is not numbered.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "header": {
+              "description": "(0.2) Default true. False prints no header row: a table of labels and values.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "column_groups": {
+              "description": "(0.2) A row of group titles above the column titles. Each group spans one or more columns, in order;\nthe spans add up to the number of columns. A group with an empty title leaves its columns' titles\nspanning both header rows.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ColumnGroup"
+              }
             },
             "columns": {
               "type": "array",
@@ -281,12 +396,12 @@
               }
             },
             "rows": {
-              "description": "One cell per column in every row. Cells are plain text.",
+              "description": "One cell per column in every row. A cell is plain text, or (0.2) `{ \"markdown\": \"...\" }`.",
               "type": "array",
               "items": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "$ref": "#/$defs/Cell"
                 }
               }
             },
@@ -301,7 +416,6 @@
           "additionalProperties": false,
           "required": [
             "type",
-            "caption",
             "columns",
             "rows"
           ]
@@ -449,6 +563,26 @@
         }
       ]
     },
+    "ColumnGroup": {
+      "description": "A group of columns under one title (0.2).",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "span": {
+          "description": "The number of columns, at least 1.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "span"
+      ]
+    },
     "Column": {
       "description": "A table column.",
       "type": "object",
@@ -472,6 +606,14 @@
             "string",
             "null"
           ]
+        },
+        "width": {
+          "description": "(0.2) The column's share of the table width, 0 < w <= 1. Columns without one share the rest.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
         }
       },
       "additionalProperties": false,
@@ -488,21 +630,28 @@
         "right"
       ]
     },
-    "DataItem": {
-      "description": "One line of a data box.",
-      "type": "object",
-      "properties": {
-        "label": {
+    "Cell": {
+      "description": "A table cell: plain text, or (0.2) one paragraph of inline Markdown (emphasis, strong, code, links, hard\nline breaks and cross-references).",
+      "anyOf": [
+        {
           "type": "string"
         },
-        "value": {
+        {
+          "$ref": "#/$defs/MarkdownCell"
+        }
+      ]
+    },
+    "MarkdownCell": {
+      "description": "A table cell of inline Markdown (0.2).",
+      "type": "object",
+      "properties": {
+        "markdown": {
           "type": "string"
         }
       },
       "additionalProperties": false,
       "required": [
-        "label",
-        "value"
+        "markdown"
       ]
     },
     "Appendix": {
@@ -559,11 +708,25 @@
       ]
     },
     "MediaType": {
-      "description": "The image types the engine reads.",
-      "type": "string",
-      "enum": [
-        "image/svg+xml",
-        "image/png"
+      "description": "The asset types the engine reads: images, and (0.2) fonts for the template.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "image/svg+xml",
+            "image/png"
+          ]
+        },
+        {
+          "description": "(0.2)",
+          "type": "string",
+          "const": "image/jpeg"
+        },
+        {
+          "description": "(0.2) A TrueType or OpenType font file, or a font collection.",
+          "type": "string",
+          "const": "font/ttf"
+        }
       ]
     },
     "TemplateOverrides": {
@@ -614,9 +777,344 @@
             "boolean",
             "null"
           ]
+        },
+        "cover_layout": {
+          "description": "\"classic\" (the default) or \"photo\": a photograph band, the summary and the logo strip on cards, and\na control block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoverLayout"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cover_image_height_mm": {
+          "description": "The height of the cover photograph, millimetres.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_ink": {
+          "description": "Colours as \"#rrggbb\": the cover's text, its accent (rules, the line under the title, labels), and the\nground of a cover card.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cover_accent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "card_ground": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heading_ink": {
+          "description": "The colour of headings, and of the rule under a level-1 heading (none when unset).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heading_rule": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table_header_ink": {
+          "description": "The text of a table's header row; its ground is `accent_ground`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "heading_sizes_pt": {
+          "description": "Heading sizes for levels 1 to 4, points.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "heading_bold": {
+          "description": "Bold headings. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "heading_numbers": {
+          "description": "\"spaced\" (\"2.1  Scope\", the default) or \"dotted\" (\"2. Scope\" at level 1, \"2.1 Scope\" below).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HeadingNumbers"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "section_page_break": {
+          "description": "A new page before each top-level section. Default true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "heading_font": {
+          "description": "Font family names. A family that is not bundled must be given by a `font/ttf` asset in `fonts`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body_font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fonts": {
+          "description": "Asset ids of font files, used by the PDF and HTML writers. Word uses the family names and does not\nembed these files.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "body_size_pt": {
+          "description": "Body text size, points.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "margins_mm": {
+          "description": "Page margins, millimetres.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Margins"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "control_page": {
+          "description": "A document-control page after the cover. Default true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "running_head": {
+          "description": "The running head (number, revision, furniture). Default true.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "foot_sensitivity": {
+          "description": "The sensitivity label in the middle of the running foot. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "table_widths": {
+          "description": "\"content\": every writer sizes table columns by the same rule, from their text. Unset, each writer\nkeeps its 0.1 widths.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TableWidths"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision_prefix": {
+          "description": "The word before the revision in the running head and on the cover foot. Default \"Rev \".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cover_image_fill": {
+          "description": "Photo cover: the photograph grows to take the height the cover's content leaves, between\n`cover_image_min_mm` and `cover_image_height_mm`, so the content sits at the foot. Default false.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cover_image_min_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_image_rule_pt": {
+          "description": "Photo cover: a rule of the accent along the foot of the photograph, points. It replaces the short\nrule above the title. Default none.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_title_pt": {
+          "description": "Photo cover: the title size, points. Default 25.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "cover_panel_ground": {
+          "description": "Photo cover: the ground of the control block. Default none (the cover paper shows through).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "table_size_pt": {
+          "description": "Table text size, points. Default the body size.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "table_padding_mm": {
+          "description": "Table cell padding, millimetres: [top and bottom, left and right].",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "headless_padding_mm": {
+          "description": "A table with no header row (labels and values): its cell padding [top and bottom, left and right],\nmillimetres, and its text size, points. Default those of the other tables.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "headless_size_pt": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "table_stripe": {
+          "description": "The ground of every second body row of a table with a header row. Default none.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_height": {
+          "description": "The distance from one line of body text to the next, in multiples of the text size (such as 1.5).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "paragraph_spacing_pt": {
+          "description": "The space between paragraphs, points.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "list_indent_mm": {
+          "description": "The indent of each list level, millimetres.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
         }
       },
       "additionalProperties": false
+    },
+    "CoverLayout": {
+      "description": "The cover's layout (0.2).",
+      "type": "string",
+      "enum": [
+        "classic",
+        "photo"
+      ]
+    },
+    "HeadingNumbers": {
+      "description": "How a heading's number is printed (0.2).",
+      "type": "string",
+      "enum": [
+        "spaced",
+        "dotted"
+      ]
+    },
+    "Margins": {
+      "description": "Page margins, millimetres (0.2).",
+      "type": "object",
+      "properties": {
+        "top": {
+          "type": "number",
+          "format": "float"
+        },
+        "bottom": {
+          "type": "number",
+          "format": "float"
+        },
+        "left": {
+          "type": "number",
+          "format": "float"
+        },
+        "right": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "top",
+        "bottom",
+        "left",
+        "right"
+      ]
+    },
+    "TableWidths": {
+      "description": "How table columns are sized (0.2).",
+      "type": "string",
+      "enum": [
+        "content"
+      ]
     }
   }
 }

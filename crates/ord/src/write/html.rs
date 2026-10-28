@@ -9,9 +9,9 @@ use std::fmt::Write as _;
 use base64::Engine as _;
 
 use crate::markdown::{Inline, MdBlock};
-use crate::model::Align;
+use crate::model::{Align, CoverLayout, MediaType};
 use crate::render::Prepared;
-use crate::resolve::{RBlock, RFigure, RTable, heading_text};
+use crate::resolve::{RBlock, RFigure, RTable, cell_inlines};
 
 /// Writes the document as one HTML file.
 pub fn write(p: &Prepared) -> String {
@@ -31,19 +31,26 @@ pub fn write(p: &Prepared) -> String {
     h.push_str("</style>\n</head>\n<body>\n");
 
     // Page furniture: repeated on every printed page (position: fixed), shown once on screen.
-    h.push_str("<div class=\"running-head\">");
-    let _ = write!(h, "<span>{}</span>", esc(&p.header_left()));
-    if let Some(f) = &d.control.furniture {
-        let _ = write!(h, "<span class=\"furniture\">{}</span>", esc(f));
+    if p.template.running_head {
+        h.push_str("<div class=\"running-head\">");
+        let _ = write!(h, "<span>{}</span>", esc(&p.header_left()));
+        if let Some(f) = &d.control.furniture {
+            let _ = write!(h, "<span class=\"furniture\">{}</span>", esc(f));
+        }
+        h.push_str("</div>\n");
     }
-    h.push_str("</div>\n");
 
     if p.template.cover {
-        cover(p, &mut h);
+        match p.template.cover_layout {
+            CoverLayout::Classic => cover(p, &mut h),
+            CoverLayout::Photo => photo_cover(p, &mut h),
+        }
     } else {
         let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
     }
-    control(p, &mut h);
+    if p.template.control_page {
+        control(p, &mut h);
+    }
     if d.contents && !d.toc.is_empty() {
         h.push_str(
             "<nav class=\"contents\" aria-label=\"Contents\">\n<h2 class=\"front\">Contents</h2>\n<ul>\n",
@@ -54,7 +61,7 @@ pub fn write(p: &Prepared) -> String {
                 "<li class=\"toc-{}\"><a href=\"#{}\">{}</a></li>",
                 e.level,
                 esc(&e.anchor),
-                esc(&heading_text(e.number.as_deref(), &e.title))
+                esc(&p.toc_text(e))
             );
         }
         h.push_str("</ul>\n</nav>\n");
@@ -71,8 +78,14 @@ pub fn write(p: &Prepared) -> String {
     h.push_str("</main>\n");
 
     let foot = p.footer_left();
-    if !foot.is_empty() {
-        let _ = writeln!(h, "<footer class=\"running-foot\"><span>{}</span></footer>", esc(&foot));
+    let middle = p.footer_middle();
+    if !foot.is_empty() || middle.is_some() {
+        h.push_str("<footer class=\"running-foot\">");
+        let _ = write!(h, "<span>{}</span>", esc(&foot));
+        if let Some(m) = middle {
+            let _ = write!(h, "<span class=\"sensitivity\">{}</span>", esc(&m));
+        }
+        h.push_str("</footer>\n");
     }
     h.push_str("</body>\n</html>\n");
     h
@@ -107,9 +120,74 @@ fn cover(p: &Prepared, h: &mut String) {
     h.push_str("</dl>\n</header>\n");
 }
 
+/// The photo cover (spec 0002 §4), in the same order as the PDF and Word writers.
+fn photo_cover(p: &Prepared, h: &mut String) {
+    let d = &p.doc;
+    h.push_str("<header class=\"cover photo\">\n");
+    if let Some((id, alt)) = &d.cover_image
+        && let Some(a) = p.assets.get(id)
+    {
+        let _ = writeln!(
+            h,
+            "<img class=\"band\" src=\"{}\" alt=\"{}\" style=\"height: {}mm\"/>",
+            data_uri(a),
+            esc(alt),
+            crate::write::pdf::band_mm(p)
+        );
+        if let Some(r) = p.template.cover_image_rule_pt.filter(|r| *r > 0.0) {
+            let _ = writeln!(h, "<div class=\"band-rule\" style=\"height: {r}pt\"></div>");
+        }
+    }
+    h.push_str("<div class=\"cover-body\">\n");
+    if !(d.cover_image.is_some() && p.template.cover_image_rule_pt.is_some_and(|r| r > 0.0)) {
+        h.push_str("<div class=\"accent-rule\"></div>\n");
+    }
+    let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
+    for line in [&d.subtitle, &d.organisation, &d.notice].into_iter().flatten() {
+        let _ = writeln!(h, "<p class=\"meta\">{}</p>", esc(line));
+    }
+    if let Some(s) = &d.summary {
+        h.push_str("<div class=\"card summary\">\n");
+        md_blocks(s, h);
+        h.push_str("</div>\n");
+    }
+    if !d.cover_logos.is_empty() {
+        h.push_str("<div class=\"card logos\">\n");
+        for l in &d.cover_logos {
+            h.push_str("<div class=\"logo-cell\">");
+            if let Some(a) = p.assets.get(&l.asset) {
+                let _ = write!(h, "<img src=\"{}\" alt=\"{}\"/>", data_uri(a), esc(&l.name));
+            }
+            let _ = write!(h, "<p class=\"logo-name\">{}</p>", esc(&l.name));
+            if let Some(r) = &l.role {
+                let _ = write!(h, "<p class=\"logo-role\">{}</p>", esc(r));
+            }
+            h.push_str("</div>\n");
+        }
+        h.push_str("</div>\n");
+    }
+    let rows = p.cover_rows();
+    if !rows.is_empty() {
+        let _ = writeln!(
+            h,
+            "<table class=\"cover-rows\">\n<thead><tr><th colspan=\"2\">{}</th></tr></thead>\n<tbody>",
+            esc(crate::render::CONTROL)
+        );
+        for (l, v) in &rows {
+            let _ = writeln!(h, "<tr><th scope=\"row\">{}</th><td>{}</td></tr>", esc(l), esc(v));
+        }
+        h.push_str("</tbody>\n</table>\n");
+    }
+    h.push_str("</div>\n</header>\n");
+}
+
 fn control(p: &Prepared, h: &mut String) {
     let c = &p.doc.control;
-    h.push_str("<section class=\"document-control\">\n<h2 class=\"front\">Document control</h2>\n");
+    let _ = writeln!(
+        h,
+        "<section class=\"document-control\">\n<h2 class=\"front\">{}</h2>",
+        esc(crate::render::CONTROL)
+    );
     h.push_str("<table class=\"control\">\n<tbody>\n");
     for (label, value) in c.rows() {
         let _ = writeln!(h, "<tr><th scope=\"row\">{}</th><td>{}</td></tr>", esc(label), esc(&value));
@@ -144,12 +222,12 @@ fn blocks(p: &Prepared, bs: &[RBlock], h: &mut String) {
                 // The document title is h1; a level-1 section is h2.
                 let tag = format!("h{}", s.level + 1);
                 let cls = if s.number.is_none() { " class=\"unnumbered\"" } else { "" };
-                let _ = writeln!(h, "<{tag}{cls}>{}</{tag}>", esc(&s.heading()));
+                let _ = writeln!(h, "<{tag}{cls}>{}</{tag}>", esc(&p.heading(s)));
                 blocks(p, &s.body, h);
                 h.push_str("</section>\n");
             }
             RBlock::Prose(md) => md_blocks(md, h),
-            RBlock::Table(t) => table(t, h),
+            RBlock::Table(t) => table(p, t, h),
             RBlock::Figure(f) => figure(p, f, h),
             RBlock::DataBox(d) => {
                 let _ = writeln!(h, "<aside class=\"data-box\" id=\"{}\">", esc(&d.anchor));
@@ -172,19 +250,56 @@ fn blocks(p: &Prepared, bs: &[RBlock], h: &mut String) {
     }
 }
 
-fn table(t: &RTable, h: &mut String) {
-    let _ = writeln!(h, "<table class=\"data\" id=\"{}\">", esc(&t.anchor));
-    let _ = writeln!(h, "<caption>{}</caption>", esc(&t.caption_text()));
-    h.push_str("<thead><tr>");
-    for c in &t.columns {
-        let _ = write!(h, "<th{}>{}</th>", align(c.align), esc(&c.header()));
+fn table(p: &Prepared, t: &RTable, h: &mut String) {
+    let cls = if t.header { "data" } else { "data headless" };
+    let _ = writeln!(h, "<table class=\"{cls}\" id=\"{}\">", esc(&t.anchor));
+    if let Some(c) = t.caption_text() {
+        let _ = writeln!(h, "<caption>{}</caption>", esc(&c));
     }
-    h.push_str("</tr></thead>\n<tbody>\n");
+    if let Some(w) = p.column_widths(t) {
+        h.push_str("<colgroup>");
+        for f in w {
+            let _ = write!(h, "<col style=\"width: {}%\"/>", fmt_pct(f));
+        }
+        h.push_str("</colgroup>\n");
+    }
+    if t.header {
+        h.push_str("<thead>");
+        let lone = |i: usize| t.group_of(i).is_some_and(|(g, _)| t.groups[g].0.is_empty());
+        if !t.groups.is_empty() {
+            // The group row: a column under a group with no title takes its own title, spanning both rows.
+            h.push_str("<tr>");
+            for (i, c) in t.columns.iter().enumerate() {
+                match t.group_of(i) {
+                    Some((g, first)) if !t.groups[g].0.is_empty() => {
+                        if first == i {
+                            let (title, span) = &t.groups[g];
+                            let _ = write!(h, "<th colspan=\"{span}\" class=\"centre\">{}</th>", esc(title));
+                        }
+                    }
+                    _ => {
+                        let _ = write!(h, "<th rowspan=\"2\"{}>{}</th>", align(c.align), esc(&c.header()));
+                    }
+                }
+            }
+            h.push_str("</tr>\n");
+        }
+        h.push_str("<tr>");
+        for (i, c) in t.columns.iter().enumerate() {
+            if t.groups.is_empty() || !lone(i) {
+                let _ = write!(h, "<th{}>{}</th>", align(c.align), esc(&c.header()));
+            }
+        }
+        h.push_str("</tr></thead>\n");
+    }
+    h.push_str("<tbody>\n");
     for row in &t.rows {
         h.push_str("<tr>");
         for (i, cell) in row.iter().enumerate() {
             let a = t.columns.get(i).map(|c| c.align).unwrap_or_default();
-            let _ = write!(h, "<td{}>{}</td>", align(a), esc(cell));
+            let _ = write!(h, "<td{}>", align(a));
+            inlines(cell_inlines(cell), h);
+            h.push_str("</td>");
         }
         h.push_str("</tr>\n");
     }
@@ -350,7 +465,33 @@ fn style(p: &Prepared, h: &mut String) {
             base64::engine::general_purpose::STANDARD.encode(f.woff2)
         );
     }
+    // The document's own font files: a single font goes in as a data URI under its own family; a collection
+    // cannot, so the family name is left to the reader's system.
+    for id in &t.fonts {
+        let Some(a) = p.assets.get(id).filter(|a| a.media_type == MediaType::Font) else { continue };
+        if a.bytes.starts_with(b"ttcf") {
+            continue;
+        }
+        let bytes = typst::foundations::Bytes::new(a.bytes.clone());
+        if let Some(font) = typst::text::Font::new(bytes, 0) {
+            let info = font.info();
+            let style =
+                if info.variant.style == typst::text::FontStyle::Normal { "normal" } else { "italic" };
+            let format = if a.bytes.starts_with(b"OTTO") { "opentype" } else { "truetype" };
+            let _ = writeln!(
+                h,
+                "@font-face {{ font-family: \"{}\"; font-weight: {}; font-style: {style}; src: url(data:font/ttf;base64,{}) format(\"{format}\"); }}",
+                info.family.replace('"', ""),
+                info.variant.weight.to_number(),
+                base64::engine::general_purpose::STANDARD.encode(&a.bytes)
+            );
+        }
+    }
     let tnum = if t.table_tabular_figures { "font-variant-numeric: tabular-nums;" } else { "" };
+    let hs = match t.heading_sizes_pt {
+        Some(s) => s.map(|v| format!("{v}pt")),
+        None => ["1.6em", "1.3em", "1.1em", "1em"].map(String::from),
+    };
     let _ = write!(
         h,
         r#":root {{ --paper: {paper}; --body-paper: {body_paper}; --ink: {ink}; --ink-2: {ink2}; --rule: {rule};
@@ -430,6 +571,94 @@ figcaption {{ font-weight: 700; text-align: left; margin-top: 0.4em; }}
         head_off = t.margin_top_mm * 0.6,
         cover_h = t.page_height_mm - t.margin_top_mm - t.margin_bottom_mm,
     );
+    // The 0.2 template values, written only when a document uses them, so a 0.1 document's file is unchanged.
+    let mut x = String::new();
+    if t.heading_sizes_pt.is_some() || t.heading_bold || t.heading_ink != t.ink {
+        let _ = writeln!(
+            x,
+            "h1, h2, h3, h4, h5 {{ font-weight: {}; color: {}; }}\nh2 {{ font-size: {}; }} h3 {{ font-size: {}; }} h4 {{ font-size: {}; }} h5 {{ font-size: {}; }}",
+            if t.heading_bold { 700 } else { 400 },
+            t.heading_ink,
+            hs[0],
+            hs[1],
+            hs[2],
+            hs[3]
+        );
+    }
+    if let Some(c) = t.heading_rule {
+        let _ = writeln!(x, "main h2 {{ border-bottom: 1.2pt solid {c}; padding-bottom: 3pt; }}");
+    }
+    if t.table_header_ink != t.ink {
+        let _ = writeln!(x, "thead th {{ color: {}; }}", t.table_header_ink);
+    }
+    if p.grid_foot() {
+        x.push_str(".running-foot { display: flex; gap: 2em; }\n");
+    }
+    if !t.section_page_break {
+        x.push_str("@media print { main > section { break-before: auto; } }\n");
+    }
+    if let Some(lh) = t.line_height {
+        let _ = writeln!(x, "body {{ line-height: {lh}; }}");
+    }
+    if let Some(gap) = t.paragraph_spacing_pt {
+        let _ = writeln!(x, "p {{ margin: {gap}pt 0; }}");
+    }
+    if let Some(i) = t.list_indent_mm {
+        let _ = writeln!(x, "ul, ol {{ padding-left: {i}mm; }}");
+    }
+    if let Some(size) = t.table_size_pt {
+        let _ = writeln!(x, "table {{ font-size: {size}pt; }}");
+    }
+    if let Some([y, xx]) = t.table_padding_mm {
+        let _ = writeln!(x, "th, td {{ padding: {y}mm {xx}mm; }}");
+    }
+    if let Some(c) = t.table_stripe {
+        let _ = writeln!(x, "table:not(.headless) tbody tr:nth-child(even) {{ background: {c}; }}");
+    }
+    if crate::resolve::has_headless(&p.doc) {
+        let _ = writeln!(x, "table.headless td:first-child {{ color: {}; }}", t.ink_2);
+        if let Some([y, xx]) = t.headless_padding_mm {
+            let _ = writeln!(x, "table.headless td {{ padding: {y}mm {xx}mm; }}");
+        }
+        if let Some(size) = t.headless_size_pt {
+            let _ = writeln!(x, "table.headless {{ font-size: {size}pt; }}");
+        }
+    }
+    if t.cover && t.cover_layout == CoverLayout::Photo {
+        let _ = write!(
+            x,
+            r#".cover.photo {{ padding: 0 0 2rem; color: {cink}; }}
+.cover.photo .band {{ display: block; width: 100%; height: {band}mm; object-fit: cover; }}
+.cover-body {{ padding: 2rem 2rem 0; }}
+.cover.photo .accent-rule {{ width: 14mm; height: 1.5pt; background: {caccent}; margin-bottom: 1.2rem; }}
+.cover.photo .doc-title {{ color: {cink}; font-weight: {hw}; font-size: {title}pt; line-height: 1.14; }}
+.cover.photo .band-rule {{ background: {caccent}; }}
+.cover.photo .meta {{ color: {caccent}; font-size: 0.82em; margin: 0.3em 0; }}
+.cover .card {{ background: {card}; color: var(--ink); border-radius: 1.5mm; padding: 1rem 1.4rem; margin-top: 1rem; }}
+.cover .logos {{ display: flex; }}
+.cover .logo-cell {{ flex: 1; text-align: center; border-left: 0.5pt solid var(--rule); }}
+.cover .logo-cell:first-child {{ border-left: none; }}
+.cover .logo-cell img {{ height: 9mm; }}
+.cover .logo-name {{ font-weight: 700; font-size: 0.8em; margin: 0.4em 0 0.1em; }}
+.cover .logo-role {{ font-size: 0.62em; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin: 0; }}
+table.cover-rows {{ margin-top: 1.5rem; border: 0.5pt solid {caccent}; }}
+table.cover-rows th, table.cover-rows td {{ border-bottom: 0.5pt solid {caccent}; color: {cink}; background: none; }}
+table.cover-rows thead th {{ color: {caccent}; text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72em; }}
+table.cover-rows tbody th {{ text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.72em; font-weight: 400; width: 35%; }}
+table.cover-rows td {{ font-weight: 700; }}
+"#,
+            hw = if t.heading_bold { 700 } else { 400 },
+            cink = t.cover_ink,
+            caccent = t.cover_accent,
+            card = t.card_ground,
+            band = t.cover_image_height_mm,
+            title = t.cover_title_pt,
+        );
+        if let Some(c) = t.cover_panel_ground {
+            let _ = writeln!(x, "table.cover-rows {{ background: {c}; }}");
+        }
+    }
+    h.push_str(&x);
 }
 
 #[cfg(test)]

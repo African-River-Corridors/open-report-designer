@@ -10,11 +10,119 @@ use crate::register::{Register, Status};
 /// Every check on a document, in a stable order.
 pub fn check(doc: &Document, assets: &Assets, register: &Register) -> Vec<Finding> {
     let mut out = Vec::new();
+    version(doc, &mut out);
     control(doc, register, &mut out);
     let (_, structural) = crate::resolve::resolve(doc, register);
     out.extend(structural);
     images(doc, assets, &mut out);
+    cover(doc, assets, &mut out);
     out
+}
+
+/// A "0.1" document may not use a field added in "0.2" (ORD001), so that it still renders the same on a
+/// 0.1 engine. The finding names the field and the version it needs.
+fn version(doc: &Document, out: &mut Vec<Finding>) {
+    if doc.ord != "0.1" {
+        return;
+    }
+    let mut used: Vec<String> = Vec::new();
+    if doc.cover_image.is_some() {
+        used.push("/cover_image".into());
+    }
+    if !doc.cover_logos.is_empty() {
+        used.push("/cover_logos".into());
+    }
+    if doc.cover_details.is_some() {
+        used.push("/cover_details".into());
+    }
+    if doc.footer.is_some() {
+        used.push("/footer".into());
+    }
+    for (id, a) in &doc.assets {
+        if matches!(a.media_type, crate::model::MediaType::Jpeg | crate::model::MediaType::Font) {
+            used.push(format!("/assets/{}/media_type", id.replace('~', "~0").replace('/', "~1")));
+        }
+    }
+    if let Some(t) = &doc.template {
+        let v = serde_json::to_value(t).unwrap_or_default();
+        const V01: [&str; 7] =
+            ["organisation_logo", "paper", "ink", "ink_2", "rule", "accent_ground", "cover"];
+        if let Some(m) = v.as_object() {
+            for k in m.keys().filter(|k| !V01.contains(&k.as_str())) {
+                used.push(format!("/template/{k}"));
+            }
+        }
+    }
+    fn walk(blocks: &[Block], path: &str, used: &mut Vec<String>) {
+        for (i, b) in blocks.iter().enumerate() {
+            let p = format!("{path}/{i}");
+            match b {
+                Block::Section(s) => walk(&s.body, &format!("{p}/body"), used),
+                Block::Table(t) => {
+                    if t.caption.is_none() {
+                        used.push(format!("{p}/caption"));
+                    }
+                    if t.header.is_some() {
+                        used.push(format!("{p}/header"));
+                    }
+                    if !t.column_groups.is_empty() {
+                        used.push(format!("{p}/column_groups"));
+                    }
+                    for (c, col) in t.columns.iter().enumerate() {
+                        if col.width.is_some() {
+                            used.push(format!("{p}/columns/{c}/width"));
+                        }
+                    }
+                    for (r, row) in t.rows.iter().enumerate() {
+                        for (c, cell) in row.iter().enumerate() {
+                            if matches!(cell, crate::model::Cell::Markdown(_)) {
+                                used.push(format!("{p}/rows/{r}/{c}"));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    walk(&doc.body, "/body", &mut used);
+    for (i, a) in doc.appendices.iter().enumerate() {
+        walk(&a.body, &format!("/appendices/{i}/body"), &mut used);
+    }
+    for path in used {
+        out.push(Finding::error(
+            "ORD001",
+            &path,
+            "this is a format 0.2 field (or value); the document says \"ord\": \"0.1\". Write \"0.2\"",
+        ));
+    }
+}
+
+/// The cover photograph and the logos name image assets that exist and are valid (ORD011); the photograph
+/// has alt text (ORD014).
+fn cover(doc: &Document, assets: &Assets, out: &mut Vec<Finding>) {
+    if let Some(c) = &doc.cover_image {
+        image(&c.asset, "/cover_image/asset", assets, out);
+        if c.alt.trim().is_empty() {
+            out.push(Finding::error("ORD014", "/cover_image/alt", "the cover photograph has no alt text"));
+        }
+    }
+    for (i, l) in doc.cover_logos.iter().enumerate() {
+        image(&l.asset, &format!("/cover_logos/{i}/asset"), assets, out);
+    }
+    let fonts = doc.template.as_ref().map(|t| t.fonts.as_slice()).unwrap_or_default();
+    for (i, id) in fonts.iter().enumerate() {
+        if let Some(a) = assets.get(id)
+            && a.media_type == crate::model::MediaType::Font
+            && let Err(why) = crate::assets::validate(a)
+        {
+            out.push(Finding::error(
+                "ORD011",
+                format!("/template/fonts/{i}"),
+                format!("asset {id:?}: {why}"),
+            ));
+        }
+    }
 }
 
 /// Every figure and map names an asset that exists, has a supported type and is a valid image (ORD011).
@@ -41,6 +149,10 @@ fn image(id: &str, path: &str, assets: &Assets, out: &mut Vec<Finding>) {
         out.push(Finding::error("ORD011", path, format!("no asset {id:?}")));
         return;
     };
+    if !a.media_type.is_image() {
+        out.push(Finding::error("ORD011", path, format!("asset {id:?} is a font, not an image")));
+        return;
+    }
     if let Err(why) = crate::assets::validate(a) {
         out.push(Finding::error(
             "ORD011",

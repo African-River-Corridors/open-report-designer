@@ -75,7 +75,7 @@ fn appendices_tables_and_figures_are_numbered_with_the_letter_in_appendices() {
         for x in b {
             match x {
                 RBlock::Section(s) => walk(&s.body, out),
-                RBlock::Table(t) => out.push(t.label.clone()),
+                RBlock::Table(t) => out.extend(t.label.clone()),
                 RBlock::Figure(f) => out.push(f.label.clone()),
                 _ => {}
             }

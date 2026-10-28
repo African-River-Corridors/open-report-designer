@@ -16,8 +16,8 @@ fn fontdb() -> resvg::usvg::fontdb::Database {
     for f in crate::fonts::bundled() {
         db.load_font_data(f.ttf.to_vec());
     }
-    db.set_sans_serif_family(crate::template::DEFAULT.body_font);
-    db.set_serif_family(crate::template::DEFAULT.heading_font);
+    db.set_sans_serif_family(crate::template::DEFAULT_BODY_FONT);
+    db.set_serif_family(crate::template::DEFAULT_HEADING_FONT);
     db.set_monospace_family(crate::template::DEFAULT.mono_font);
     db
 }
@@ -25,7 +25,7 @@ fn fontdb() -> resvg::usvg::fontdb::Database {
 /// An SVG read with the bundled fonts only and no access to files: an `<image>` that names a file is left out.
 pub fn parse_svg(bytes: &[u8]) -> Result<resvg::usvg::Tree, String> {
     let opt = resvg::usvg::Options {
-        font_family: crate::template::DEFAULT.body_font.to_string(),
+        font_family: crate::template::DEFAULT_BODY_FONT.to_string(),
         fontdb: Arc::new(fontdb()),
         image_href_resolver: resvg::usvg::ImageHrefResolver {
             resolve_data: resvg::usvg::ImageHrefResolver::default_data_resolver(),

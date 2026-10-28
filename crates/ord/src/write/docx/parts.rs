@@ -15,17 +15,22 @@ pub const REL: &str = "http://schemas.openxmlformats.org/officeDocument/2006/rel
 
 const CT_W: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml";
 
-/// `[Content_Types].xml`: a default for each extension and an override for each XML part.
-pub fn content_types() -> String {
+/// `[Content_Types].xml`: a default for each extension and an override for each XML part. `cover_foot` adds
+/// the photo cover's own footer part; `jpeg` the JPEG extension.
+pub fn content_types(cover_foot: bool, jpeg: bool) -> String {
     let mut x = String::from(DECL);
     x.push_str("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">");
     for (ext, ct) in [
         ("rels", "application/vnd.openxmlformats-package.relationships+xml"),
         ("xml", "application/xml"),
         ("png", "image/png"),
+        ("jpeg", "image/jpeg"),
         ("svg", "image/svg+xml"),
         ("odttf", "application/vnd.openxmlformats-officedocument.obfuscatedFont"),
     ] {
+        if ext == "jpeg" && !jpeg {
+            continue;
+        }
         let _ = write!(x, "<Default Extension=\"{ext}\" ContentType=\"{ct}\"/>");
     }
     for (part, ct) in [
@@ -40,6 +45,9 @@ pub fn content_types() -> String {
         ("/docProps/app.xml", "application/vnd.openxmlformats-officedocument.extended-properties+xml".into()),
     ] {
         let _ = write!(x, "<Override PartName=\"{part}\" ContentType=\"{ct}\"/>");
+    }
+    if cover_foot {
+        let _ = write!(x, "<Override PartName=\"/word/footer2.xml\" ContentType=\"{CT_W}.footer+xml\"/>");
     }
     x.push_str("</Types>");
     x
@@ -114,15 +122,21 @@ pub fn app(p: &Prepared) -> String {
     x
 }
 
-/// `word/settings.xml`: fields update on open (so Word fills the table of contents), fonts embedded,
-/// hyphenation off. The children are in the schema's order.
+/// `word/settings.xml`: fonts embedded, hyphenation off, and, when the document has a table of contents,
+/// fields update on open (so Word fills in its page numbers). The children are in the schema's order.
+///
+/// `updateFields` is written only for a table of contents: Word answers it with a modal "update the
+/// fields?" question on every open, which a master that people edit should not ask, and which stops a
+/// scripted export until someone clicks. PAGE and NUMPAGES update without it.
 pub fn settings(p: &Prepared) -> String {
     let mut x = String::from(DECL);
     let _ = write!(x, "<w:settings xmlns:w=\"{NS_W}\">");
     x.push_str("<w:zoom w:percent=\"100\"/><w:embedTrueTypeFonts/>");
     x.push_str("<w:defaultTabStop w:val=\"709\"/><w:autoHyphenation w:val=\"false\"/>");
     x.push_str("<w:characterSpacingControl w:val=\"doNotCompress\"/>");
-    x.push_str("<w:updateFields w:val=\"true\"/>");
+    if p.doc.contents && !p.doc.toc.is_empty() {
+        x.push_str("<w:updateFields w:val=\"true\"/>");
+    }
     x.push_str(
         "<w:compat><w:compatSetting w:name=\"compatibilityMode\" w:uri=\"http://schemas.microsoft.com/office/word\" w:val=\"15\"/></w:compat>",
     );
@@ -134,7 +148,7 @@ pub fn settings(p: &Prepared) -> String {
 /// `word/numbering.xml`: abstract list 0 is bullets, 1 is numbers. Instance 1 is the bullets; instance
 /// `2 + i` is ordered list `i`, which restarts at its own start number on its level.
 pub fn numbering(p: &Prepared, ordered: &[(u8, u64)]) -> String {
-    let font = p.template.body_font;
+    let font = esc(&p.template.body_font);
     let mut x = String::from(DECL);
     let _ = write!(x, "<w:numbering xmlns:w=\"{NS_W}\">");
     for (id, bullets) in [(0, true), (1, false)] {
@@ -148,11 +162,12 @@ pub fn numbering(p: &Prepared, ordered: &[(u8, u64)]) -> String {
             } else {
                 ("decimal", format!("%{}.", lvl + 1))
             };
-            let left = 397 * (lvl + 1);
+            let step = p.template.list_indent_mm.map(|i| (i * 56.693).round() as u32).unwrap_or(397);
+            let left = step * (lvl + 1);
             let _ = write!(
                 x,
                 "<w:lvl w:ilvl=\"{lvl}\"><w:start w:val=\"1\"/><w:numFmt w:val=\"{fmt}\"/><w:lvlText w:val=\"{text}\"/>\
-                 <w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"{left}\" w:hanging=\"397\"/></w:pPr>\
+                 <w:lvlJc w:val=\"left\"/><w:pPr><w:ind w:left=\"{left}\" w:hanging=\"{step}\"/></w:pPr>\
                  <w:rPr><w:rFonts w:ascii=\"{font}\" w:hAnsi=\"{font}\" w:cs=\"{font}\"/></w:rPr></w:lvl>"
             );
         }
@@ -183,11 +198,12 @@ pub struct Embedded {
 pub fn font_table(t: &Template, embedded: &[Embedded]) -> String {
     let mut x = String::from(DECL);
     let _ = write!(x, "<w:fonts xmlns:w=\"{NS_W}\" xmlns:r=\"{NS_R}\">");
-    for (family, kind, pitch) in [
-        (t.body_font, "swiss", "variable"),
-        (t.heading_font, "roman", "variable"),
-        (t.mono_font, "modern", "fixed"),
-    ] {
+    let mut families = vec![(&*t.body_font, "swiss", "variable")];
+    if t.heading_font != t.body_font {
+        families.push((&*t.heading_font, "roman", "variable"));
+    }
+    families.push((t.mono_font, "modern", "fixed"));
+    for (family, kind, pitch) in families {
         let _ = write!(
             x,
             "<w:font w:name=\"{}\"><w:charset w:val=\"00\"/><w:family w:val=\"{kind}\"/><w:pitch w:val=\"{pitch}\"/>",
@@ -220,10 +236,71 @@ pub fn styles(p: &Prepared) -> String {
     let data = hex(t.data_ground);
     let body_sz = (t.body_size_pt * 2.0).round() as u32;
     let text_w = twips(t.page_width_mm - t.margin_left_mm - t.margin_right_mm);
-    let head = rfonts(t.heading_font);
+    let head = rfonts(&t.heading_font);
+    // A 0.2 colour that equals its 0.1 default is not written, so a 0.1 document's styles stay as they were.
+    let hink = if t.heading_ink == t.ink {
+        String::new()
+    } else {
+        format!("<w:color w:val=\"{}\"/>", hex(t.heading_ink))
+    };
+    let hbold = if t.heading_bold { "<w:b/><w:bCs/>" } else { "" };
+    let h_sz = t.heading_sizes_pt.unwrap_or([16.0, 13.0, 11.0, 10.0]).map(|v| (v * 2.0).round() as u32);
+    let think = hex(t.table_header_ink);
+    let (cink, caccent, card_ink) = (hex(t.cover_ink), hex(t.cover_accent), hex(t.ink));
+    let clabel = hex(t.cover_ink.over(t.paper, 0.65));
     let mono = rfonts(t.mono_font);
     let lang = esc(&p.doc.language);
 
+    // Line height and paragraph spacing (0.2): "at least" the line height, the same baseline-to-baseline
+    // distance as the PDF's line boxes and leading.
+    let default_spacing = match (t.line_height, t.paragraph_spacing_pt) {
+        (None, None) => "<w:spacing w:after=\"120\" w:line=\"288\" w:lineRule=\"auto\"/>".to_string(),
+        (lh, gap) => {
+            let after = (gap.unwrap_or(6.0) * 20.0).round() as u32;
+            match lh {
+                Some(lh) => format!(
+                    "<w:spacing w:after=\"{after}\" w:line=\"{}\" w:lineRule=\"atLeast\"/>",
+                    (lh * t.body_size_pt * 20.0).round() as u32
+                ),
+                None => format!("<w:spacing w:after=\"{after}\" w:line=\"288\" w:lineRule=\"auto\"/>"),
+            }
+        }
+    };
+    let table_pt = t.table_size_pt.unwrap_or(t.body_size_pt);
+    let table_spacing = match (t.line_height, t.table_padding_mm) {
+        (None, None) => {
+            "<w:spacing w:before=\"40\" w:after=\"40\" w:line=\"240\" w:lineRule=\"auto\"/>".to_string()
+        }
+        (lh, pad) => {
+            let edge = if pad.is_some() { 0 } else { 40 };
+            match lh {
+                Some(lh) => format!(
+                    "<w:spacing w:before=\"{edge}\" w:after=\"{edge}\" w:line=\"{}\" w:lineRule=\"atLeast\"/>",
+                    (lh * table_pt * 20.0).round() as u32
+                ),
+                None => format!(
+                    "<w:spacing w:before=\"{edge}\" w:after=\"{edge}\" w:line=\"240\" w:lineRule=\"auto\"/>"
+                ),
+            }
+        }
+    };
+    // A table with no header row: its own size, and the line height at that size.
+    let plain_pt = t.headless_size_pt.unwrap_or(table_pt);
+    let plain_size = match t.headless_size_pt {
+        Some(pt) => format!("<w:sz w:val=\"{0}\"/><w:szCs w:val=\"{0}\"/>", (pt * 2.0).round() as u32),
+        None => String::new(),
+    };
+    let plain_spacing = match t.line_height {
+        Some(lh) if t.headless_size_pt.is_some() => format!(
+            "<w:spacing w:line=\"{}\" w:lineRule=\"atLeast\"/>",
+            (lh * plain_pt * 20.0).round() as u32
+        ),
+        _ => String::new(),
+    };
+    let table_size = match t.table_size_pt {
+        Some(pt) => format!("<w:sz w:val=\"{0}\"/><w:szCs w:val=\"{0}\"/>", (pt * 2.0).round() as u32),
+        None => String::new(),
+    };
     let mut x = String::from(DECL);
     let _ = write!(
         x,
@@ -234,8 +311,8 @@ pub fn styles(p: &Prepared) -> String {
         x,
         "<w:docDefaults><w:rPrDefault><w:rPr>{}<w:color w:val=\"{ink}\"/><w:sz w:val=\"{body_sz}\"/>\
          <w:szCs w:val=\"{body_sz}\"/><w:lang w:val=\"{lang}\"/></w:rPr></w:rPrDefault>\
-         <w:pPrDefault><w:pPr><w:spacing w:after=\"120\" w:line=\"288\" w:lineRule=\"auto\"/></w:pPr></w:pPrDefault></w:docDefaults>",
-        rfonts(t.body_font)
+         <w:pPrDefault><w:pPr>{default_spacing}</w:pPr></w:pPrDefault></w:docDefaults>",
+        rfonts(&t.body_font)
     );
 
     // (id, name, based on, next, pPr, rPr)
@@ -251,10 +328,21 @@ pub fn styles(p: &Prepared) -> String {
                 lvl - 1
             ),
             format!(
-                "{head}{}<w:sz w:val=\"{sz}\"/><w:szCs w:val=\"{sz}\"/>",
+                "{head}{hbold}{}{hink}<w:sz w:val=\"{sz}\"/><w:szCs w:val=\"{sz}\"/>",
                 if italic { "<w:i/>" } else { "" }
             ),
         )
+    };
+    // The rule under a level-1 heading, when the template has one.
+    let h1_rule = |mut h: (String, String, &'static str, &'static str, String, String)| {
+        if let Some(r) = t.heading_rule {
+            h.4 = h.4.replacen(
+                "<w:spacing",
+                &format!("<w:pBdr><w:bottom w:val=\"single\" w:sz=\"10\" w:space=\"3\" w:color=\"{}\"/></w:pBdr><w:spacing", hex(r)),
+                1,
+            );
+        }
+        h
     };
     let mut paragraph: Vec<(String, String, &str, &str, String, String)> = vec![
         ("Normal".into(), "Normal".into(), "", "", String::new(), String::new()),
@@ -315,11 +403,11 @@ pub fn styles(p: &Prepared) -> String {
             "<w:spacing w:after=\"0\"/>".into(),
             String::new(),
         ),
-        heading(1, 32, 360, false),
-        heading(2, 26, 300, false),
-        heading(3, 22, 240, false),
-        heading(4, 20, 200, false),
-        heading(5, 20, 200, true),
+        h1_rule(heading(1, h_sz[0], 360, false)),
+        heading(2, h_sz[1], 300, false),
+        heading(3, h_sz[2], 240, false),
+        heading(4, h_sz[3], 200, false),
+        heading(5, h_sz[3], 200, true),
         (
             "FrontHeading".into(),
             "Front Heading".into(),
@@ -385,8 +473,8 @@ pub fn styles(p: &Prepared) -> String {
             "Table Text".into(),
             "Normal",
             "TableText",
-            "<w:spacing w:before=\"40\" w:after=\"40\" w:line=\"240\" w:lineRule=\"auto\"/>".into(),
-            tnum.to_string(),
+            table_spacing.clone(),
+            format!("{table_size}{tnum}"),
         ),
         (
             "TableHeader".into(),
@@ -433,6 +521,187 @@ pub fn styles(p: &Prepared) -> String {
             format!("<w:color w:val=\"{ink2}\"/><w:sz w:val=\"16\"/><w:szCs w:val=\"16\"/>"),
         ),
     ];
+    // The 0.2 styles: the table head in its own ink, and the photo cover. Written only when used.
+    // The photo cover's styles: every size and line from `render::PHOTO`, as the PDF writer reads them.
+    let ph = crate::render::PHOTO;
+    let hp = |pt: f64| (pt * 2.0).round() as u32;
+    let exact = |pt: f64, lh: f64| (pt * lh * 20.0).round() as u32;
+    let mm = |v: f64| (v * 56.693).round() as u32;
+    let title_pt = f64::from(t.cover_title_pt);
+    let panel_line_ink = hex(t.cover_ink.over(t.cover_panel_ground.unwrap_or(t.paper), 0.18));
+    let _ = &panel_line_ink;
+    let extra: Vec<(String, String, &str, &str, String, String)> = vec![
+        (
+            "TableHead".into(),
+            "Table Head".into(),
+            "TableHeader",
+            "TableText",
+            String::new(),
+            format!("<w:color w:val=\"{think}\"/>"),
+        ),
+        (
+            "CoverTitle".into(),
+            "Cover Title".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                mm(ph.title_after_mm),
+                exact(title_pt, ph.title_lh)
+            ),
+            format!(
+                "{head}{hbold}<w:color w:val=\"{cink}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(title_pt),
+                hp(title_pt)
+            ),
+        ),
+        (
+            "CoverMeta".into(),
+            "Cover Meta".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                mm(1.0),
+                exact(ph.meta_pt, 1.35)
+            ),
+            format!(
+                "<w:color w:val=\"{caccent}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.meta_pt),
+                hp(ph.meta_pt)
+            ),
+        ),
+        (
+            "CardText".into(),
+            "Card Text".into(),
+            "Normal",
+            "CardText",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                mm(ph.card_par_gap_mm),
+                exact(ph.card_text_pt, ph.card_lh)
+            ),
+            format!(
+                "<w:color w:val=\"{card_ink}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.card_text_pt),
+                hp(ph.card_text_pt)
+            ),
+        ),
+        (
+            "LogoName".into(),
+            "Logo Name".into(),
+            "Normal",
+            "LogoRole",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/><w:jc w:val=\"center\"/>",
+                mm(1.0),
+                exact(ph.logo_name_pt, 1.25)
+            ),
+            format!(
+                "<w:b/><w:bCs/><w:color w:val=\"{card_ink}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.logo_name_pt),
+                hp(ph.logo_name_pt)
+            ),
+        ),
+        (
+            "LogoRole".into(),
+            "Logo Role".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"exact\"/><w:jc w:val=\"center\"/>",
+                exact(ph.logo_role_pt, 1.25)
+            ),
+            format!(
+                "<w:caps/><w:color w:val=\"{ink2}\"/><w:spacing w:val=\"10\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.logo_role_pt),
+                hp(ph.logo_role_pt)
+            ),
+        ),
+        (
+            "CoverRowsHead".into(),
+            "Cover Rows Head".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                exact(ph.panel_head_pt, 1.3)
+            ),
+            format!(
+                "<w:b/><w:bCs/><w:caps/><w:color w:val=\"{caccent}\"/><w:spacing w:val=\"22\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.panel_head_pt),
+                hp(ph.panel_head_pt)
+            ),
+        ),
+        (
+            "CoverRowLabel".into(),
+            "Cover Row Label".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                exact(ph.panel_label_pt, 1.3)
+            ),
+            format!(
+                "<w:caps/><w:color w:val=\"{clabel}\"/><w:spacing w:val=\"6\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.panel_label_pt),
+                hp(ph.panel_label_pt)
+            ),
+        ),
+        (
+            "CoverRowValue".into(),
+            "Cover Row Value".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                exact(ph.panel_value_pt, 1.3)
+            ),
+            format!(
+                "<w:b/><w:bCs/><w:color w:val=\"{cink}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.panel_value_pt),
+                hp(ph.panel_value_pt)
+            ),
+        ),
+        (
+            "CoverFoot".into(),
+            "Cover Foot".into(),
+            "Normal",
+            "CoverFoot",
+            format!("<w:tabs><w:tab w:val=\"right\" w:pos=\"{text_w}\"/></w:tabs><w:spacing w:after=\"0\"/>"),
+            format!(
+                "<w:color w:val=\"{clabel}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.foot_pt),
+                hp(ph.foot_pt)
+            ),
+        ),
+        (
+            "TablePlain".into(),
+            "Table Plain".into(),
+            "TableText",
+            "TablePlain",
+            plain_spacing.clone(),
+            plain_size.clone(),
+        ),
+        (
+            "TableLabel".into(),
+            "Table Label".into(),
+            "TablePlain",
+            "TablePlain",
+            String::new(),
+            format!("<w:color w:val=\"{ink2}\"/>"),
+        ),
+    ];
+    for style in extra {
+        let used = match style.0.as_str() {
+            "TableHead" => t.table_header_ink != t.ink,
+            "TableLabel" | "TablePlain" => crate::resolve::has_headless(&p.doc),
+            _ => t.cover && t.cover_layout == crate::model::CoverLayout::Photo,
+        };
+        if used {
+            paragraph.push(style);
+        }
+    }
     for lvl in 1..=3u32 {
         paragraph.push((
             format!("TOC{lvl}"),

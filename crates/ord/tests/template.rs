@@ -42,7 +42,7 @@ fn the_default_template_is_the_table_of_section_7() {
 #[test]
 fn every_template_font_is_bundled() {
     let t = Template::default();
-    for family in [t.heading_font, t.body_font, t.mono_font] {
+    for family in [&*t.heading_font, &*t.body_font, t.mono_font] {
         assert!(ord::fonts::family(family).next().is_some(), "{family} is not bundled");
     }
 }
@@ -68,6 +68,7 @@ fn overrides_are_applied() {
         rule: Some("#0A0B0C".into()),
         accent_ground: Some("#0d0e0f".into()),
         cover: Some(false),
+        ..Default::default()
     };
     let (t, findings) = Template::with_overrides(&o, &assets);
     assert!(findings.is_empty(), "{findings:?}");

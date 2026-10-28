@@ -8,14 +8,18 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// The format version this engine reads.
-pub const FORMAT_VERSION: &str = "0.1";
+/// The format version this engine writes in its examples: the newest it reads.
+pub const FORMAT_VERSION: &str = "0.2";
+
+/// Every format version this engine reads. A "0.1" document may not use a field added in "0.2"
+/// (`crate::check` refuses it), so it still renders on a 0.1 engine.
+pub const FORMAT_VERSIONS: [&str; 2] = ["0.1", "0.2"];
 
 /// A report document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Document {
-    /// Format version. v0.1 accepts "0.1" only.
+    /// Format version: "0.1" or "0.2". Fields marked "(0.2)" need "0.2".
     pub ord: String,
     /// A document class id from the register, such as "report".
     pub class: String,
@@ -38,6 +42,19 @@ pub struct Document {
     /// Table of contents. Default from the document class.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contents: Option<bool>,
+    /// (0.2) A photograph across the head of the cover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image: Option<CoverImage>,
+    /// (0.2) A strip of logos on the cover, each with a name and a role, such as the parties to a report.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cover_logos: Vec<CoverLogo>,
+    /// (0.2) The rows of the cover's control block, in place of number, revision, date and status. An empty
+    /// list leaves the block out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_details: Option<Vec<DataItem>>,
+    /// (0.2) The text on the left of the running foot, in place of the organisation and the notice.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub footer: Option<String>,
     /// The main matter.
     pub body: Vec<Block>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -54,6 +71,29 @@ impl Document {
     pub fn language(&self) -> &str {
         self.language.as_deref().unwrap_or("en")
     }
+}
+
+/// A photograph across the head of the cover (0.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CoverImage {
+    /// An asset id.
+    pub asset: String,
+    /// Alt text. Required and not empty.
+    pub alt: String,
+}
+
+/// One logo of the cover's logo strip (0.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CoverLogo {
+    /// An asset id.
+    pub asset: String,
+    /// The name printed under the logo. Also its alt text.
+    pub name: String,
+    /// A role printed under the name, such as "Client".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 /// Document control (spec 0001 §3.2).
@@ -211,19 +251,60 @@ pub struct Prose {
     pub markdown: String,
 }
 
-/// A table, numbered "Table n".
+/// A table, numbered "Table n" when it has a caption.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    pub caption: String,
+    /// The caption. Required in 0.1. (0.2) Optional: a table with no caption is not numbered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    /// (0.2) Default true. False prints no header row: a table of labels and values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub header: Option<bool>,
+    /// (0.2) A row of group titles above the column titles. Each group spans one or more columns, in order;
+    /// the spans add up to the number of columns. A group with an empty title leaves its columns' titles
+    /// spanning both header rows.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub column_groups: Vec<ColumnGroup>,
     pub columns: Vec<Column>,
-    /// One cell per column in every row. Cells are plain text.
-    pub rows: Vec<Vec<String>>,
+    /// One cell per column in every row. A cell is plain text, or (0.2) `{ "markdown": "..." }`.
+    pub rows: Vec<Vec<Cell>>,
     /// Notes under the table (Markdown).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+}
+
+/// A group of columns under one title (0.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ColumnGroup {
+    pub title: String,
+    /// The number of columns, at least 1.
+    pub span: u32,
+}
+
+/// A table cell: plain text, or (0.2) one paragraph of inline Markdown (emphasis, strong, code, links, hard
+/// line breaks and cross-references).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Cell {
+    Text(String),
+    Markdown(MarkdownCell),
+}
+
+impl From<&str> for Cell {
+    fn from(s: &str) -> Cell {
+        Cell::Text(s.to_string())
+    }
+}
+
+/// A table cell of inline Markdown (0.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MarkdownCell {
+    pub markdown: String,
 }
 
 /// A table column.
@@ -236,6 +317,9 @@ pub struct Column {
     /// The unit, shown under the column title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    /// (0.2) The column's share of the table width, 0 < w <= 1. Columns without one share the rest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
 }
 
 /// Horizontal alignment of a table column.
@@ -329,13 +413,19 @@ pub struct AssetSource {
     pub path: Option<String>,
 }
 
-/// The image types the engine reads.
+/// The asset types the engine reads: images, and (0.2) fonts for the template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum MediaType {
     #[serde(rename = "image/svg+xml")]
     Svg,
     #[serde(rename = "image/png")]
     Png,
+    /// (0.2)
+    #[serde(rename = "image/jpeg")]
+    Jpeg,
+    /// (0.2) A TrueType or OpenType font file, or a font collection.
+    #[serde(rename = "font/ttf", alias = "font/otf", alias = "font/collection")]
+    Font,
 }
 
 impl MediaType {
@@ -343,7 +433,14 @@ impl MediaType {
         match self {
             MediaType::Svg => "image/svg+xml",
             MediaType::Png => "image/png",
+            MediaType::Jpeg => "image/jpeg",
+            MediaType::Font => "font/ttf",
         }
+    }
+
+    /// True for the image types.
+    pub fn is_image(self) -> bool {
+        !matches!(self, MediaType::Font)
     }
 }
 
@@ -368,6 +465,148 @@ pub struct TemplateOverrides {
     /// Default true.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<bool>,
+    // The fields below are added in 0.2 (spec 0002 §3). Each is optional; an unset field keeps the default.
+    /// "classic" (the default) or "photo": a photograph band, the summary and the logo strip on cards, and
+    /// a control block.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_layout: Option<CoverLayout>,
+    /// The height of the cover photograph, millimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_height_mm: Option<f32>,
+    /// Colours as "#rrggbb": the cover's text, its accent (rules, the line under the title, labels), and the
+    /// ground of a cover card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_ink: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_accent: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_ground: Option<String>,
+    /// The colour of headings, and of the rule under a level-1 heading (none when unset).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_ink: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_rule: Option<String>,
+    /// The text of a table's header row; its ground is `accent_ground`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_header_ink: Option<String>,
+    /// Heading sizes for levels 1 to 4, points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_sizes_pt: Option<[f32; 4]>,
+    /// Bold headings. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_bold: Option<bool>,
+    /// "spaced" ("2.1  Scope", the default) or "dotted" ("2. Scope" at level 1, "2.1 Scope" below).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_numbers: Option<HeadingNumbers>,
+    /// A new page before each top-level section. Default true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub section_page_break: Option<bool>,
+    /// Font family names. A family that is not bundled must be given by a `font/ttf` asset in `fonts`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heading_font: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_font: Option<String>,
+    /// Asset ids of font files, used by the PDF and HTML writers. Word uses the family names and does not
+    /// embed these files.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fonts: Vec<String>,
+    /// Body text size, points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_size_pt: Option<f32>,
+    /// Page margins, millimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margins_mm: Option<Margins>,
+    /// A document-control page after the cover. Default true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_page: Option<bool>,
+    /// The running head (number, revision, furniture). Default true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running_head: Option<bool>,
+    /// The sensitivity label in the middle of the running foot. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub foot_sensitivity: Option<bool>,
+    /// "content": every writer sizes table columns by the same rule, from their text. Unset, each writer
+    /// keeps its 0.1 widths.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_widths: Option<TableWidths>,
+    /// The word before the revision in the running head and on the cover foot. Default "Rev ".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_prefix: Option<String>,
+    /// Photo cover: the photograph grows to take the height the cover's content leaves, between
+    /// `cover_image_min_mm` and `cover_image_height_mm`, so the content sits at the foot. Default false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_fill: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_min_mm: Option<f32>,
+    /// Photo cover: a rule of the accent along the foot of the photograph, points. It replaces the short
+    /// rule above the title. Default none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_image_rule_pt: Option<f32>,
+    /// Photo cover: the title size, points. Default 25.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_title_pt: Option<f32>,
+    /// Photo cover: the ground of the control block. Default none (the cover paper shows through).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_panel_ground: Option<String>,
+    /// Table text size, points. Default the body size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_size_pt: Option<f32>,
+    /// Table cell padding, millimetres: [top and bottom, left and right].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_padding_mm: Option<[f32; 2]>,
+    /// A table with no header row (labels and values): its cell padding [top and bottom, left and right],
+    /// millimetres, and its text size, points. Default those of the other tables.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless_padding_mm: Option<[f32; 2]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless_size_pt: Option<f32>,
+    /// The ground of every second body row of a table with a header row. Default none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_stripe: Option<String>,
+    /// The distance from one line of body text to the next, in multiples of the text size (such as 1.5).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_height: Option<f32>,
+    /// The space between paragraphs, points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paragraph_spacing_pt: Option<f32>,
+    /// The indent of each list level, millimetres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_indent_mm: Option<f32>,
+}
+
+/// How table columns are sized (0.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TableWidths {
+    Content,
+}
+
+/// The cover's layout (0.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum CoverLayout {
+    #[default]
+    Classic,
+    Photo,
+}
+
+/// How a heading's number is printed (0.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum HeadingNumbers {
+    #[default]
+    Spaced,
+    Dotted,
+}
+
+/// Page margins, millimetres (0.2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Margins {
+    pub top: f32,
+    pub bottom: f32,
+    pub left: f32,
+    pub right: f32,
 }
 
 fn yes() -> bool {

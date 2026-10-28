@@ -16,8 +16,9 @@ use std::path::Path;
 
 use common::*;
 use ord::markdown::{MdBlock, plain};
+use ord::model::CoverLayout;
 use ord::render::{Format, Prepared, prepare};
-use ord::resolve::{ControlView, RBlock, heading_text};
+use ord::resolve::{ControlView, RBlock, cell_inlines};
 
 fn squash(s: &str) -> String {
     s.chars().filter(|c| !c.is_whitespace()).collect()
@@ -26,9 +27,40 @@ fn squash(s: &str) -> String {
 // --- What every output must hold ----------------------------------------------------------------------
 
 fn expected(p: &Prepared) -> Vec<String> {
+    expected_in(p, false)
+}
+
+/// The expected texts in the order a PDF text reader meets them. They differ in one place only: Typst draws
+/// a header cell that spans two rows after the rest of its first row, so its text follows the group titles
+/// in the content stream. The page shows the same thing.
+fn expected_pdf(p: &Prepared) -> Vec<String> {
+    expected_in(p, true)
+}
+
+fn expected_in(p: &Prepared, pdf: bool) -> Vec<String> {
     let d = &p.doc;
     let mut out = Vec::new();
-    if p.template.cover {
+    if p.template.cover && p.template.cover_layout == CoverLayout::Photo {
+        out.push(d.title.clone());
+        out.extend(d.subtitle.clone());
+        out.extend(d.organisation.clone());
+        out.extend(d.notice.clone());
+        if let Some(s) = &d.summary {
+            md(s, &mut out);
+        }
+        for l in &d.cover_logos {
+            out.push(l.name.clone());
+            out.extend(l.role.clone());
+        }
+        let rows = p.cover_rows();
+        if !rows.is_empty() {
+            out.push(ord::render::CONTROL.into());
+            for (label, value) in rows {
+                out.push(label);
+                out.push(value);
+            }
+        }
+    } else if p.template.cover {
         out.push(d.control.class_name.clone());
         out.push(d.title.clone());
         out.extend(d.subtitle.clone());
@@ -44,6 +76,23 @@ fn expected(p: &Prepared) -> Vec<String> {
     } else {
         out.push(d.title.clone());
     }
+    if p.template.control_page {
+        control(p, &mut out);
+    }
+    if d.contents && !d.toc.is_empty() {
+        out.push("Contents".into());
+        out.extend(d.toc.iter().map(|e| p.toc_text(e)));
+    }
+    blocks(p, &d.body, &mut out, pdf);
+    for a in &d.appendices {
+        out.push(a.heading());
+        blocks(p, &a.body, &mut out, pdf);
+    }
+    out.into_iter().map(|s| squash(&s)).filter(|s| !s.is_empty()).collect()
+}
+
+fn control(p: &Prepared, out: &mut Vec<String>) {
+    let d = &p.doc;
     out.push("Document control".into());
     for (label, value) in d.control.rows() {
         out.push(label.to_string());
@@ -61,30 +110,46 @@ fn expected(p: &Prepared) -> Vec<String> {
             ]);
         }
     }
-    if d.contents && !d.toc.is_empty() {
-        out.push("Contents".into());
-        out.extend(d.toc.iter().map(|e| heading_text(e.number.as_deref(), &e.title)));
-    }
-    blocks(&d.body, &mut out);
-    for a in &d.appendices {
-        out.push(a.heading());
-        blocks(&a.body, &mut out);
-    }
-    out.into_iter().map(|s| squash(&s)).filter(|s| !s.is_empty()).collect()
 }
 
-fn blocks(bs: &[RBlock], out: &mut Vec<String>) {
+fn blocks(p: &Prepared, bs: &[RBlock], out: &mut Vec<String>, pdf: bool) {
     for b in bs {
         match b {
             RBlock::Section(s) => {
-                out.push(s.heading());
-                blocks(&s.body, out);
+                out.push(p.heading(s));
+                blocks(p, &s.body, out, pdf);
             }
             RBlock::Prose(m) => md(m, out),
             RBlock::Table(t) => {
-                out.push(t.caption_text());
-                out.extend(t.columns.iter().map(|c| c.header()));
-                out.extend(t.rows.iter().flatten().cloned());
+                out.extend(t.caption_text());
+                if t.header {
+                    // With groups: the first header row in column order (a titled group once, at its first
+                    // column; a column under an untitled group by its own title), then the other titles.
+                    let lone = |i: usize| t.group_of(i).is_some_and(|(g, _)| t.groups[g].0.is_empty());
+                    if !t.groups.is_empty() {
+                        let mut spanning = Vec::new();
+                        for (i, c) in t.columns.iter().enumerate() {
+                            match t.group_of(i) {
+                                Some((g, first)) if !t.groups[g].0.is_empty() => {
+                                    if first == i {
+                                        out.push(t.groups[g].0.clone());
+                                    }
+                                }
+                                _ if pdf => spanning.push(c.header()),
+                                _ => out.push(c.header()),
+                            }
+                        }
+                        out.extend(spanning);
+                    }
+                    out.extend(
+                        t.columns
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, _)| t.groups.is_empty() || !lone(*i))
+                            .map(|(_, c)| c.header()),
+                    );
+                }
+                out.extend(t.rows.iter().flatten().map(|c| plain(cell_inlines(c))));
                 if let Some(n) = &t.notes {
                     md(n, out);
                 }
@@ -217,8 +282,12 @@ fn pdf_text(p: &Prepared, bytes: &[u8]) -> String {
                     s = r.to_string();
                 }
             }
-            let foot = [squash(&format!("Page {} of {n}", i + 1)), squash(&p.footer_left())];
-            for _ in 0..2 {
+            let foot = [
+                squash(&format!("Page {} of {n}", i + 1)),
+                squash(&p.footer_middle().unwrap_or_default()),
+                squash(&p.footer_left()),
+            ];
+            for _ in 0..3 {
                 for f in foot.iter().filter(|f| !f.is_empty()) {
                     if let Some(r) = s.strip_suffix(f.as_str()) {
                         s = r.to_string();
@@ -237,7 +306,7 @@ fn pdf_missing(p: &Prepared, bytes: &[u8]) -> Vec<String> {
     let text = pdf_text(p, bytes).to_lowercase();
     let mut at = 0;
     let mut missing = Vec::new();
-    for e in expected(p).into_iter().map(|e| e.to_lowercase()) {
+    for e in expected_pdf(p).into_iter().map(|e| e.to_lowercase()) {
         match text[at..].find(&e) {
             Some(i) => at += i + e.len(),
             None => missing.push(e),
@@ -269,6 +338,11 @@ fn conforms(path: &Path) {
 #[test]
 fn the_example_has_the_same_structure_and_text_in_pdf_html_and_word() {
     conforms(&repo().join("examples/screening-report.json"));
+}
+
+#[test]
+fn the_photo_cover_example_has_the_same_structure_and_text_in_pdf_html_and_word() {
+    conforms(&repo().join("examples/photo-cover-report.json"));
 }
 
 #[test]
@@ -343,9 +417,11 @@ fn rezip(bytes: &[u8], name: &str, f: impl Fn(&str) -> String) -> Vec<u8> {
 
 #[test]
 fn every_format_renders_the_same_bytes_twice() {
-    for path in
-        [repo().join("examples/screening-report.json"), repo().join("crates/ord/tests/fixtures/stress.json")]
-    {
+    for path in [
+        repo().join("examples/screening-report.json"),
+        repo().join("examples/photo-cover-report.json"),
+        repo().join("crates/ord/tests/fixtures/stress.json"),
+    ] {
         let (d, a) = load(&path);
         for f in Format::ALL {
             assert!(

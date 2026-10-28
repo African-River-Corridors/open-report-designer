@@ -7,8 +7,8 @@
 use std::collections::BTreeMap;
 
 use crate::finding::Finding;
-use crate::markdown::{self, MdBlock};
-use crate::model::{self, Align, Block, Document, Sensitivity};
+use crate::markdown::{self, Inline, MdBlock};
+use crate::model::{self, Align, Block, Cell, Document, HeadingNumbers, Sensitivity};
 use crate::register::{Register, Stage};
 
 /// The deepest heading level.
@@ -31,6 +31,14 @@ pub struct Resolved {
     pub toc: Vec<TocEntry>,
     pub body: Vec<RBlock>,
     pub appendices: Vec<RAppendix>,
+    /// (0.2) The cover photograph: asset id and alt text.
+    pub cover_image: Option<(String, String)>,
+    /// (0.2) The cover's logo strip.
+    pub cover_logos: Vec<model::CoverLogo>,
+    /// (0.2) The rows of the cover's control block, when the document gives them.
+    pub cover_details: Option<Vec<(String, String)>>,
+    /// (0.2) The text on the left of the running foot.
+    pub footer: Option<String>,
 }
 
 /// Document control as the writers print it.
@@ -122,27 +130,74 @@ impl RSection {
 
 /// "2.1  Scope": the number and the title with two spaces, or the title alone.
 pub fn heading_text(number: Option<&str>, title: &str) -> String {
-    match number {
-        Some(n) => format!("{n}  {title}"),
-        None => title.to_string(),
+    heading_text_as(HeadingNumbers::Spaced, number, title)
+}
+
+/// A heading in a template's number style: "2.1  Scope" (spaced), or "2. Scope" and "2.1 Scope" (dotted, where
+/// a number with no point takes one).
+pub fn heading_text_as(style: HeadingNumbers, number: Option<&str>, title: &str) -> String {
+    match (number, style) {
+        (Some(n), HeadingNumbers::Spaced) => format!("{n}  {title}"),
+        (Some(n), HeadingNumbers::Dotted) if n.contains('.') => format!("{n} {title}"),
+        (Some(n), HeadingNumbers::Dotted) => format!("{n}. {title}"),
+        (None, _) => title.to_string(),
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RTable {
-    /// "Table 3", "Table A.1".
-    pub label: String,
-    pub caption: String,
+    /// "Table 3", "Table A.1". None for a table with no caption, which is not numbered.
+    pub label: Option<String>,
+    pub caption: Option<String>,
     pub anchor: String,
+    /// False for a table with no header row.
+    pub header: bool,
+    /// The group row above the column titles: (title, span). Empty when there is none.
+    pub groups: Vec<(String, u32)>,
     pub columns: Vec<RColumn>,
-    pub rows: Vec<Vec<String>>,
+    /// Each cell is prose of at most one paragraph: a plain cell is one text run.
+    pub rows: Vec<Vec<Vec<MdBlock>>>,
     pub notes: Option<Vec<MdBlock>>,
 }
 
 impl RTable {
-    /// "Table 3: The options".
-    pub fn caption_text(&self) -> String {
-        format!("{}: {}", self.label, self.caption)
+    /// "Table 3: The options", or None for a table with no caption.
+    pub fn caption_text(&self) -> Option<String> {
+        Some(format!("{}: {}", self.label.as_ref()?, self.caption.as_ref()?))
+    }
+
+    /// For each column, the group it sits under: (index of the group, first column of the group). None when
+    /// the table has no groups.
+    pub fn group_of(&self, column: usize) -> Option<(usize, usize)> {
+        let mut first = 0usize;
+        for (g, (_, span)) in self.groups.iter().enumerate() {
+            let end = first + *span as usize;
+            if column < end {
+                return Some((g, first));
+            }
+            first = end;
+        }
+        None
+    }
+}
+
+/// True when the document holds a table with no header row: its label column has a look of its own.
+pub fn has_headless(d: &Resolved) -> bool {
+    fn walk(bs: &[RBlock]) -> bool {
+        bs.iter().any(|b| match b {
+            RBlock::Table(t) => !t.header,
+            RBlock::Section(s) => walk(&s.body),
+            _ => false,
+        })
+    }
+    walk(&d.body) || d.appendices.iter().any(|a| walk(&a.body))
+}
+
+/// The inlines of a resolved cell (empty for an empty cell).
+pub fn cell_inlines(cell: &[MdBlock]) -> &[Inline] {
+    match cell.first() {
+        Some(MdBlock::Paragraph(i)) => i,
+        _ => &[],
     }
 }
 
@@ -151,6 +206,8 @@ pub struct RColumn {
     pub title: String,
     pub unit: Option<String>,
     pub align: Align,
+    /// The column's share of the table width, when the document gives one.
+    pub width: Option<f64>,
 }
 
 impl RColumn {
@@ -343,6 +400,13 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
         toc: r.toc,
         body,
         appendices,
+        cover_image: doc.cover_image.as_ref().map(|c| (c.asset.clone(), c.alt.clone())),
+        cover_logos: doc.cover_logos.clone(),
+        cover_details: doc
+            .cover_details
+            .as_ref()
+            .map(|d| d.iter().map(|i| (i.label.clone(), i.value.clone())).collect()),
+        footer: doc.footer.clone(),
     };
     (resolved, r.findings)
 }
@@ -424,6 +488,30 @@ impl Resolver {
             }
         }
         p.blocks
+    }
+
+    /// A table cell: a plain cell is one text run; a Markdown cell is read as prose and must be one paragraph
+    /// (ORD012 otherwise).
+    fn cell(&mut self, cell: &Cell, path: &str) -> Vec<MdBlock> {
+        match cell {
+            Cell::Text(t) if t.is_empty() => Vec::new(),
+            Cell::Text(t) => vec![MdBlock::Paragraph(vec![Inline::Text(t.clone())])],
+            Cell::Markdown(m) => {
+                let blocks = self.prose(&m.markdown, &format!("{path}/markdown"));
+                match blocks.as_slice() {
+                    [] | [MdBlock::Paragraph(_)] => blocks,
+                    _ => {
+                        self.findings.push(Finding::error(
+                            "ORD012",
+                            format!("{path}/markdown"),
+                            "a table cell holds one paragraph of inline Markdown: no lists, quotes, code blocks \
+                             or second paragraph (use a hard line break)",
+                        ));
+                        Vec::new()
+                    }
+                }
+            }
+        }
     }
 
     fn title_check(&mut self, title: &str, path: &str, appendix: bool) {
@@ -524,13 +612,51 @@ impl Resolver {
                 RBlock::Prose(self.prose(&p.markdown, &format!("{path}/markdown")))
             }
             Block::Table(t) => {
-                counters.table += 1;
-                let label = format!("Table {prefix}{}", counters.table);
-                let anchor = self.anchor(t.id.as_deref(), path, || {
-                    format!("ord-table-{}", label[6..].to_lowercase().replace('.', "-"))
+                // A table with no caption is not numbered: a reference to it prints "the table".
+                let label = t.caption.as_ref().map(|_| {
+                    counters.table += 1;
+                    format!("Table {prefix}{}", counters.table)
+                });
+                let n = counters.table;
+                let anchor = self.anchor(t.id.as_deref(), path, || match &label {
+                    Some(l) => format!("ord-table-{}", l[6..].to_lowercase().replace('.', "-")),
+                    None => format!("ord-table{}-{n}", path.replace('/', "-")),
                 });
                 if let Some(id) = &t.id {
-                    self.targets.insert(id.clone(), Target { text: label.clone(), anchor: anchor.clone() });
+                    let text = label.clone().unwrap_or_else(|| "the table".into());
+                    self.targets.insert(id.clone(), Target { text, anchor: anchor.clone() });
+                }
+                for (i, c) in t.columns.iter().enumerate() {
+                    if let Some(w) = c.width
+                        && !(w > 0.0 && w <= 1.0)
+                    {
+                        self.findings.push(Finding::error(
+                            "ORD020",
+                            format!("{path}/columns/{i}/width"),
+                            format!("the width {w} is outside 0 < w <= 1"),
+                        ));
+                    }
+                }
+                let given: f64 = t.columns.iter().filter_map(|c| c.width).sum();
+                if given > 1.0 + 1e-9 {
+                    self.findings.push(Finding::error(
+                        "ORD020",
+                        format!("{path}/columns"),
+                        format!("the column widths add up to {given}, more than the table"),
+                    ));
+                }
+                if !t.column_groups.is_empty() {
+                    let total: u64 = t.column_groups.iter().map(|g| u64::from(g.span)).sum();
+                    if t.column_groups.iter().any(|g| g.span == 0) || total != t.columns.len() as u64 {
+                        self.findings.push(Finding::error(
+                            "ORD013",
+                            format!("{path}/column_groups"),
+                            format!(
+                                "the column groups span {total} columns, each at least one; the table has {}",
+                                t.columns.len()
+                            ),
+                        ));
+                    }
                 }
                 if t.rows.is_empty() {
                     self.findings.push(Finding::warning(
@@ -552,6 +678,16 @@ impl Resolver {
                         ));
                     }
                 }
+                let mut rows = Vec::with_capacity(t.rows.len());
+                for (i, row) in t.rows.iter().enumerate() {
+                    let mut cells = Vec::with_capacity(row.len());
+                    for (j, cell) in row.iter().enumerate() {
+                        let cpath = format!("{path}/rows/{i}/{j}");
+                        self.prose_order.push(cpath.clone());
+                        cells.push(self.cell(cell, &cpath));
+                    }
+                    rows.push(cells);
+                }
                 let notes = t.notes.as_deref().map(|n| {
                     self.prose_order.push(format!("{path}/notes"));
                     self.prose(n, &format!("{path}/notes"))
@@ -560,6 +696,8 @@ impl Resolver {
                     label,
                     caption: t.caption.clone(),
                     anchor,
+                    header: t.header.unwrap_or(true),
+                    groups: t.column_groups.iter().map(|g| (g.title.clone(), g.span)).collect(),
                     columns: t
                         .columns
                         .iter()
@@ -567,9 +705,10 @@ impl Resolver {
                             title: c.title.clone(),
                             unit: c.unit.clone(),
                             align: c.align.unwrap_or_default(),
+                            width: c.width,
                         })
                         .collect(),
-                    rows: t.rows.clone(),
+                    rows,
                     notes,
                 })
             }
@@ -688,6 +827,11 @@ impl Resolver {
                     RBlock::Section(s) => walk(&mut s.body, out),
                     RBlock::Prose(p) => out.push(p),
                     RBlock::Table(t) => {
+                        for row in t.rows.iter_mut() {
+                            for cell in row.iter_mut() {
+                                out.push(cell);
+                            }
+                        }
                         if let Some(n) = t.notes.as_mut() {
                             out.push(n)
                         }
