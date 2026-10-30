@@ -41,13 +41,13 @@ def test_render_file_writes_out(tmp_path):
 
 
 def test_a_dict_document_with_supplied_assets_renders():
-    doc = json.loads(EXAMPLE.read_text())
+    doc = json.loads(EXAMPLE.read_text(encoding="utf-8"))
     assets = {k: (EXAMPLE.parent / v["path"]).read_bytes() for k, v in doc["assets"].items()}
     assert ord_report.render(doc, "html", assets=assets) == ord_report.render_file(EXAMPLE, "html")
 
 
 def test_a_document_with_errors_raises_document_error_with_its_findings():
-    doc = json.loads(EXAMPLE.read_text())
+    doc = json.loads(EXAMPLE.read_text(encoding="utf-8"))
     doc["class"] = "memo"
     with pytest.raises(ord_report.DocumentError) as e:
         ord_report.render(doc, "html")
@@ -61,7 +61,7 @@ def test_bad_json_and_bad_format():
         ord_report.render("{ nope", "html")
     assert e.value.findings[0]["code"] == "ORD001"
     with pytest.raises(ValueError):
-        ord_report.render(json.loads(EXAMPLE.read_text()), "odt")
+        ord_report.render(json.loads(EXAMPLE.read_text(encoding="utf-8")), "odt")
 
 
 def test_warnings_are_issued_as_finding_warnings():
@@ -75,8 +75,9 @@ def test_warnings_are_issued_as_finding_warnings():
 
 
 def test_check_returns_every_finding():
-    assert ord_report.check(json.loads(EXAMPLE.read_text()), assets={
-        k: (EXAMPLE.parent / v["path"]).read_bytes() for k, v in json.loads(EXAMPLE.read_text())["assets"].items()
+    doc = json.loads(EXAMPLE.read_text(encoding="utf-8"))
+    assert ord_report.check(doc, assets={
+        k: (EXAMPLE.parent / v["path"]).read_bytes() for k, v in doc["assets"].items()
     }) == []
     f = ord_report.check({"ord": "0.2"})
     assert f[0]["code"] == "ORD001"
@@ -84,8 +85,8 @@ def test_check_returns_every_finding():
 
 def test_assemble_schema_register_and_version():
     ex = ROOT / "examples" / "chaptered"
-    manifest = json.loads((ex / "manifest.json").read_text())
-    chapters = [json.loads(p.read_text()) for p in sorted((ex / "chapters").rglob("*.json"))]
+    manifest = json.loads((ex / "manifest.json").read_text(encoding="utf-8"))
+    chapters = [json.loads(p.read_text(encoding="utf-8")) for p in sorted((ex / "chapters").rglob("*.json"))]
     doc = ord_report.assemble(manifest, chapters)
     assert [s["title"] for s in doc["body"]] == ["Purpose", "Findings"]
     assert json.loads(ord_report.schema())["title"] == "Open Report Designer document"
