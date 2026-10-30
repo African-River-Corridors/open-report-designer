@@ -94,7 +94,8 @@ def test_codeql_is_advanced_setup_on_main_and_weekly_never_on_pull_requests():
 def test_third_party_actions_outside_the_basics_are_pinned_to_a_commit():
     for path in WF.glob("*.yml"):
         for uses in re.findall(r"uses:\s*(\S+)", path.read_text(encoding="utf-8")):
-            if uses.startswith(("dorny/paths-filter", "github/codeql-action")):
+            if uses.startswith(("dorny/paths-filter", "github/codeql-action", "PyO3/maturin-action",
+                                "pypa/gh-action-pypi-publish")):
                 assert re.search(r"@[0-9a-f]{40}$", uses), f"{path.name}: {uses} is not pinned to a commit"
 
 
@@ -102,3 +103,21 @@ def test_every_scheduled_workflow_reports_a_failed_run():
     watched = set(load("scheduled-failure.yml")["on"]["workflow_run"]["workflows"])
     scheduled = {load(p.name)["name"] for p in WF.glob("*.yml") if "schedule" in (load(p.name)["on"] or {})}
     assert scheduled and scheduled <= watched, f"not reported: {scheduled - watched}"
+
+
+def test_pypi_publishes_on_a_v_tag_only_through_the_pypi_environment_with_no_token():
+    doc = load("publish-pypi.yml")
+    on, jobs = doc["on"], doc["jobs"]
+    assert on["push"] == {"tags": ["v*"]} and "workflow_dispatch" in on
+    assert set(on["pull_request"]["paths"]) >= {".github/workflows/publish-pypi.yml", "crates/ord-py/**"}
+    assert doc["permissions"] == {"contents": "read"}
+    publish = jobs["publish"]
+    assert publish["if"] == "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')"
+    assert publish["environment"] == "pypi" and publish["permissions"] == {"id-token": "write"}
+    assert publish["needs"] == "check" and sorted(jobs["check"]["needs"]) == ["sdist", "wheels"]
+    # Only `publish` may upload, and it reaches PyPI by trusted publishing alone: no secret, no password.
+    for name, job in jobs.items():
+        if name != "publish":
+            assert "environment" not in job and "id-token" not in (job.get("permissions") or {}), name
+    text = (WF / "publish-pypi.yml").read_text(encoding="utf-8")
+    assert "secrets." not in text and "password" not in text

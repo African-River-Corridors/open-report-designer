@@ -7,12 +7,27 @@ name = "open-report-designer"
 description = "Open Report Designer: one typed report document to PDF, HTML and Word."
 requires-python = ">=3.10"
 license = "Apache-2.0"
+# Copies of the repository's LICENSE and NOTICE and the font licences, so the wheel and the sdist carry them.
+# A packaging cannot reach files above this folder; tests/test_packaging.py keeps the copies equal.
+license-files = ["LICENSE", "NOTICE", "licenses/OFL-*.txt"]
 readme = "README.md"
 dynamic = ["version"]
-classifiers = ["Programming Language :: Rust", "Programming Language :: Python :: 3"]
+keywords = ["report", "pdf", "html", "docx", "typst"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Markup",
+]
 
 [project.urls]
+Homepage = "https://africanrivercorridors.com/ord"
 Repository = "https://github.com/African-River-Corridors/open-report-designer"
+Issues = "https://github.com/African-River-Corridors/open-report-designer/issues"
+Changelog = "https://github.com/African-River-Corridors/open-report-designer/blob/main/CHANGELOG.md"
 
 [tool.maturin]
 python-source = "python"

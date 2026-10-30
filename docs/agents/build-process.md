@@ -77,6 +77,15 @@ A version is a tag `vX.Y.Z` on `main`, made after the release pull request (vers
 `tools/changelog.py release`) merges, with a GitHub release. The release workflow attaches the example report
 in all three formats. A tag is cut only when every acceptance criterion of the release's spec is met.
 
+**PyPI.** The same `v*` tag starts `publish-pypi.yml`. It builds an abi3 wheel for Linux (x86_64 and aarch64,
+manylinux), macOS (Intel and Apple silicon) and Windows, installs each and runs the binding tests on it,
+builds the sdist and proves it compiles, and runs `twine check`. Then the `publish` job waits for the
+maintainer to approve the `pypi` environment, and uploads with trusted publishing: there is no token. Push
+the tag by hand: a tag made with `GITHUB_TOKEN` starts no workflow. A pull request that touches
+`crates/ord-py/**` or the workflow runs everything but `publish`, as a dry run; so does a run by hand
+(`gh workflow run publish-pypi.yml`). The licence files in `crates/ord-py` are copies of the repository's
+(a package cannot reach files above its folder); `tests/test_packaging.py` keeps them equal.
+
 ## Stuck tickets
 
 If one problem is still open after two honest attempts, label the ticket `ready-for-human`, comment why in
