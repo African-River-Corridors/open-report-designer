@@ -1,0 +1,152 @@
+name: Publish to PyPI
+
+# Publishes the Python bindings (`crates/ord-py`, PyPI name open-report-designer) when a `v*` tag is pushed.
+# Trusted publishing only: PyPI trusts this workflow file and the `pypi` environment, so there is NO token
+# or secret. The `pypi` environment needs the maintainer to approve.
+#
+# Order: `wheels` (one abi3 wheel per platform, each installed and tested) and `sdist` (built, then built
+# into a wheel to prove it compiles) -> `check` (twine check, the tag is the version) -> `publish`.
+# The files on PyPI are the files the earlier jobs tested.
+#
+# On a pull request that touches the bindings or this file, and by hand, it is a dry run: everything but
+# `publish`, which runs on a pushed `v*` tag only. A tag that a workflow made with GITHUB_TOKEN does not
+# start this workflow: push the tag by hand.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/publish-pypi.yml"
+      - "crates/ord-py/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, native: true }
+          - { os: ubuntu-24.04-arm, target: aarch64 }
+          - { os: macos-15-intel, target: x86_64 }
+          - { os: macos-latest, target: aarch64 }
+          - { os: windows-latest, target: x64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      # On Linux the wheel is built in a manylinux container, so it runs on older Linux systems too.
+      - name: Build the wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          manylinux: auto
+          args: --release --locked --out dist -m crates/ord-py/Cargo.toml
+      - name: The native `ord` program, to compare the wheel's output with
+        if: matrix.native
+        shell: bash
+        run: |
+          cargo build --locked --release -p ord-cli
+          echo "ORD_CLI=$PWD/target/release/ord" >> "$GITHUB_ENV"
+      - name: Install the wheel with no compiler, then run the binding tests on it
+        shell: bash
+        run: |
+          ls -l dist
+          python -m venv "$RUNNER_TEMP/wheel-venv"
+          PY="$RUNNER_TEMP/wheel-venv/bin/python"; [ -x "$PY" ] || PY="$RUNNER_TEMP/wheel-venv/Scripts/python.exe"
+          "$PY" -m pip install --only-binary :all: pytest
+          "$PY" -m pip install --only-binary :all: --no-index --no-deps --find-links dist open-report-designer
+          "$PY" -m pip check
+          "$PY" -c "import ord_report as o; print(o.__file__); assert 'site-packages' in o.__file__"
+          "$PY" -m pytest -q -rs crates/ord-py/tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  sdist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - name: Build the source distribution
+        run: |
+          python -m pip install "maturin>=1.9,<2"
+          maturin sdist -m crates/ord-py/Cargo.toml --out dist
+          ls -l dist
+      - name: The source distribution builds and installs
+        # The sdist holds no rust-toolchain.toml, so name the pinned toolchain for the build.
+        run: |
+          export RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          python -m venv "$RUNNER_TEMP/sdist-venv"
+          "$RUNNER_TEMP/sdist-venv/bin/python" -m pip install dist/*.tar.gz
+          "$RUNNER_TEMP/sdist-venv/bin/python" -c "import ord_report; print(ord_report.__file__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  check:
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{wheel-*,sdist}"
+          path: dist
+          merge-multiple: true
+      - name: Every platform has a wheel, and there is one sdist
+        run: |
+          ls -l dist
+          test "$(ls dist/*.whl | wc -l)" -eq 5 || { echo "expected 5 wheels" >&2; exit 1; }
+          test "$(ls dist/*.tar.gz | wc -l)" -eq 1 || { echo "expected 1 sdist" >&2; exit 1; }
+      - name: twine check
+        run: |
+          python -m pip install twine
+          python -m twine check --strict dist/*
+      - name: The files carry the workspace version, and a release tag is that version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          for f in dist/*; do
+            case "$(basename "$f")" in open_report_designer-"$version"[-.]*) ;; *) echo "$f is not version $version" >&2; exit 1;; esac
+          done
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            test "v${version}" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} is not v${version}" >&2; exit 1; }
+          fi
+
+  publish:
+    needs: check
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      id-token: write # trusted publishing: PyPI exchanges this OIDC token for a short-lived upload token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "{wheel-*,sdist}"
+          path: dist
+          merge-multiple: true
+      - run: ls -l dist
+      - name: Upload to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

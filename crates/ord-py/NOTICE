@@ -1,0 +1,13 @@
+open-report-designer
+Copyright 2026 African River Corridors Limited
+
+This product includes fonts licensed under the SIL Open Font License 1.1, in crates/ord/fonts/ with their
+licences (see crates/ord/fonts/SOURCES.md):
+
+- Public Sans. Copyright 2015 The Public Sans Project Authors (https://github.com/uswds/public-sans).
+  SIL Open Font License 1.1 (crates/ord/fonts/OFL-PublicSans.txt).
+- Libre Caslon Text. Copyright 2018 The Libre Caslon Text Project Authors
+  (https://github.com/thundernixon/Libre-Caslon). SIL Open Font License 1.1
+  (crates/ord/fonts/OFL-LibreCaslonText.txt).
+- IBM Plex Mono. Copyright © 2017 IBM Corp. with Reserved Font Name "Plex". SIL Open Font License 1.1
+  (crates/ord/fonts/OFL-IBMPlexMono.txt).
