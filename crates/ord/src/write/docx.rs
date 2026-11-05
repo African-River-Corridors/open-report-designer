@@ -954,7 +954,10 @@ impl<'a, 'p> Writer<'a, 'p> {
         let logos = self.p.doc.cover_logos.clone();
         let n = logos.len() as u32;
         let tw = twips(self.text_width_mm() as f32);
+        // The last column takes the remainder, so the columns add up to the table width. Columns of
+        // `tw / n` alone fell short of it, and Word squared the two by itself, unevenly.
         let col = tw / n;
+        let widths: Vec<u32> = (0..n).map(|i| if i + 1 == n { tw - col * (n - 1) } else { col }).collect();
         let rule = parts::hex(self.p.template.rule);
         let _ = write!(
             self.x,
@@ -964,15 +967,15 @@ impl<'a, 'p> Writer<'a, 'p> {
             m = twips(ph.logo_pad_y_mm as f32),
             x = twips(1.0),
         );
-        for _ in 0..n {
-            let _ = write!(self.x, "<w:gridCol w:w=\"{col}\"/>");
+        for w in &widths {
+            let _ = write!(self.x, "<w:gridCol w:w=\"{w}\"/>");
         }
         self.x.push_str("</w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>");
         let max_w = f64::from(col) / 56.693 - 4.0; // the column, less its margins, in millimetres
-        for l in &logos {
+        for (l, w) in logos.iter().zip(&widths) {
             let _ = write!(
                 self.x,
-                "<w:tc><w:tcPr><w:tcW w:w=\"{col}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/><w:vAlign w:val=\"center\"/></w:tcPr>"
+                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/><w:vAlign w:val=\"center\"/></w:tcPr>"
             );
             if let Some(pic) = self.pic(&l.asset) {
                 let mut h = ph.logo_mm;
@@ -1391,9 +1394,11 @@ impl<'a, 'p> Writer<'a, 'p> {
         let side = (f64::from(tw) * 0.4).round() as u32;
         let mid = tw - 2 * side;
         let rule = parts::hex(p.template.rule);
+        // The table draws the rule. Each cell turns off the Footer style's own top rule: an empty
+        // `<w:pBdr/>` does not, and Word then drew a second line under the table's.
         let cell = |w: u32, jc: &str, content: &str| {
             format!(
-                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"Footer\"/><w:pBdr/><w:jc w:val=\"{jc}\"/></w:pPr>{content}</w:p></w:tc>"
+                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/></w:tcPr><w:p><w:pPr><w:pStyle w:val=\"Footer\"/><w:pBdr><w:top w:val=\"nil\"/></w:pBdr><w:jc w:val=\"{jc}\"/></w:pPr>{content}</w:p></w:tc>"
             )
         };
         let mut x = String::from(DECL);

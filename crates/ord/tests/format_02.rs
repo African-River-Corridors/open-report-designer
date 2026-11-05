@@ -344,3 +344,49 @@ fn table_padding_stripes_and_line_height_reach_every_writer() {
     assert!(html.contains("body { line-height: 1.5; }"));
     assert!(ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).is_ok());
 }
+
+/// The `<w:tbl>` that holds `marker`, from its opening tag to its close.
+fn table_holding<'a>(xml: &'a str, marker: &str) -> &'a str {
+    let at = xml.find(marker).expect("marker");
+    let start = xml[..at].rfind("<w:tbl>").expect("a table before it");
+    let end = at + xml[at..].find("</w:tbl>").expect("its close");
+    &xml[start..end]
+}
+
+fn twips_of(xml: &str, tag: &str) -> Vec<u32> {
+    xml.split(tag).skip(1).map(|s| s.split('"').next().unwrap().parse().unwrap()).collect()
+}
+
+#[test]
+fn the_logo_strip_columns_fill_the_table_width_exactly_in_word() {
+    // Columns of `width / n` lost the remainder: three columns of 3363 in a table of 10091. Word squares
+    // the grid with the table on its own, and drew the dividers and the edge unevenly.
+    for n in 1..=7 {
+        let (mut d, a) = photo();
+        let first = d.cover_logos[0].clone();
+        d.cover_logos = vec![first; n];
+        let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+        let body = docx_part(&docx, "word/document.xml").unwrap();
+        let strip = table_holding(&body, "<w:pStyle w:val=\"LogoName\"/>");
+        let width = twips_of(strip, "<w:tblW w:w=\"")[0];
+        let grid = twips_of(strip, "<w:gridCol w:w=\"");
+        let cells = twips_of(strip, "<w:tcW w:w=\"");
+        assert_eq!(grid.len(), n);
+        assert_eq!(grid.iter().sum::<u32>(), width, "{n} logos: grid {grid:?}, table {width}");
+        assert_eq!(cells, grid, "{n} logos: each cell is as wide as its column");
+    }
+}
+
+#[test]
+fn the_word_foot_draws_one_rule_not_one_per_cell() {
+    // The Footer style carries a top rule (for the 0.1 foot). The grid foot's table draws the rule itself,
+    // so its cells must switch the style's rule off: an empty <w:pBdr/> does not, and Word drew two lines.
+    let (d, a) = photo();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let foot = docx_part(&docx, "word/footer1.xml").unwrap();
+    assert!(foot.contains("<w:tbl>"), "the 0.2 grid foot");
+    assert!(!foot.contains("<w:pBdr/>"), "an empty pBdr leaves the style's rule on");
+    let cells = foot.matches("<w:pStyle w:val=\"Footer\"/>").count();
+    assert_eq!(cells, 3);
+    assert_eq!(foot.matches("<w:pBdr><w:top w:val=\"nil\"/></w:pBdr>").count(), cells);
+}
