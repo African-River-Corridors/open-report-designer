@@ -1,0 +1,1 @@
+- **No line under the cover logos in Word.** Word drew a dark seam on screen across the logo strip, where the cells' text ended and their bottom margin began; its PDF export did not show it. The space under the names and roles is now the last paragraph's spacing after, and the cells have no bottom margin, so the strip shows on screen as it prints.

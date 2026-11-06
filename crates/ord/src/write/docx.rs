@@ -207,6 +207,8 @@ fn run(text: &str, rpr: &str) -> String {
 #[derive(Default)]
 struct PPr<'a> {
     style: Option<&'a str>,
+    /// Turns off the style's keep-with-next, as `<w:keepNext w:val="0"/>`.
+    no_keep_next: bool,
     page_break: bool,
     num: Option<(usize, u8)>,
     ind_left: Option<u32>,
@@ -223,6 +225,9 @@ impl PPr<'_> {
         let mut x = String::new();
         if let Some(s) = self.style.filter(|s| *s != "Normal") {
             let _ = write!(x, "<w:pStyle w:val=\"{s}\"/>");
+        }
+        if self.no_keep_next {
+            x.push_str("<w:keepNext w:val=\"0\"/>");
         }
         if self.page_break {
             x.push_str("<w:pageBreakBefore/>");
@@ -949,8 +954,13 @@ impl<'a, 'p> Writer<'a, 'p> {
 
     /// The logo strip on a card: one column per logo, a rule between them, each logo `PHOTO.logo_mm` high
     /// in a box of `logo_box_mm` (narrower when it would not fit its column), the name and the role.
+    ///
+    /// The space under the text is the last paragraph's spacing after, not the cells' bottom margin. Word
+    /// draws a dark seam on screen where a shaded cell's text ends and its bottom margin begins, across the
+    /// whole strip, though its PDF export does not; the paragraph spacing is shaded as one with the text.
     fn logo_card(&mut self, ground: &str) {
         let ph = PHOTO;
+        let pad = twips(ph.logo_pad_y_mm as f32);
         let logos = self.p.doc.cover_logos.clone();
         let n = logos.len() as u32;
         let tw = twips(self.text_width_mm() as f32);
@@ -963,7 +973,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x,
             "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/>\
              <w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{rule}\"/></w:tblBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/>\
-             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{m}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid>",
+             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid>",
             m = twips(ph.logo_pad_y_mm as f32),
             x = twips(1.0),
         );
@@ -992,14 +1002,22 @@ impl<'a, 'p> Writer<'a, 'p> {
                     twips(ph.logo_box_mm as f32)
                 );
             }
+            let last = |is_last: bool| {
+                if is_last { format!("<w:spacing w:after=\"{pad}\"/>") } else { String::new() }
+            };
             let _ = write!(
                 self.x,
-                "<w:p><w:pPr><w:pStyle w:val=\"LogoName\"/></w:pPr>{}</w:p>",
+                "<w:p><w:pPr><w:pStyle w:val=\"LogoName\"/>{}</w:pPr>{}</w:p>",
+                last(l.role.is_none()),
                 run(&l.name, "")
             );
             if let Some(r) = &l.role {
-                let _ =
-                    write!(self.x, "<w:p><w:pPr><w:pStyle w:val=\"LogoRole\"/></w:pPr>{}</w:p>", run(r, ""));
+                let _ = write!(
+                    self.x,
+                    "<w:p><w:pPr><w:pStyle w:val=\"LogoRole\"/>{}</w:pPr>{}</w:p>",
+                    last(true),
+                    run(r, "")
+                );
             }
             self.x.push_str("</w:tc>");
         }
@@ -1101,8 +1119,14 @@ impl<'a, 'p> Writer<'a, 'p> {
             let drawing = self.inline(&pic, emu(w), emu(w * pic.aspect), &f.label, &f.alt);
             self.para(&PPr::style("Figure"), &drawing);
         }
+        // The Caption style keeps with the next paragraph, as a table's caption must keep with its table. A
+        // figure's caption sits under its image, so it keeps with nothing after it (its map key apart): else
+        // Word chains a run of figures into one block that cannot break, and leaves a page blank before it.
         let caption = self.bookmarked(&f.anchor, run(&f.caption_text(), ""));
-        self.para(&PPr::style("Caption"), &caption);
+        self.para(
+            &PPr { style: Some("Caption"), no_keep_next: f.map_key.is_none(), ..PPr::default() },
+            &caption,
+        );
         if let Some(k) = &f.map_key {
             self.para(&PPr::style("MapKey"), &run(k, ""));
         }

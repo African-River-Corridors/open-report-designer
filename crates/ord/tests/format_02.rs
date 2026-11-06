@@ -390,3 +390,27 @@ fn the_word_foot_draws_one_rule_not_one_per_cell() {
     assert_eq!(cells, 3);
     assert_eq!(foot.matches("<w:pBdr><w:top w:val=\"nil\"/></w:pBdr>").count(), cells);
 }
+
+#[test]
+fn the_logo_strip_pads_its_foot_with_paragraph_spacing_not_a_cell_margin() {
+    // Word drew a dark line on screen across the strip where the cells' text ended and their bottom margin
+    // began (its PDF export did not). The space under the text is now the last paragraph's spacing after.
+    for with_role in [true, false] {
+        let (mut d, a) = photo();
+        if !with_role {
+            for l in &mut d.cover_logos {
+                l.role = None;
+            }
+        }
+        let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+        let body = docx_part(&docx, "word/document.xml").unwrap();
+        let strip = table_holding(&body, "<w:pStyle w:val=\"LogoName\"/>");
+        let top = twips_of(strip, "<w:top w:w=\"")[0];
+        assert!(top > 0);
+        assert_eq!(twips_of(strip, "<w:bottom w:w=\""), vec![0], "no bottom cell margin");
+        let n = d.cover_logos.len();
+        let style = if with_role { "LogoRole" } else { "LogoName" };
+        let tail = format!("<w:pStyle w:val=\"{style}\"/><w:spacing w:after=\"{top}\"/>");
+        assert_eq!(strip.matches(&tail).count(), n, "each cell's last paragraph carries the pad");
+    }
+}
