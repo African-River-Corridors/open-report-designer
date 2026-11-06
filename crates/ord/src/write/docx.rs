@@ -207,6 +207,8 @@ fn run(text: &str, rpr: &str) -> String {
 #[derive(Default)]
 struct PPr<'a> {
     style: Option<&'a str>,
+    /// Turns off the style's keep-with-next, as `<w:keepNext w:val="0"/>`.
+    no_keep_next: bool,
     page_break: bool,
     num: Option<(usize, u8)>,
     ind_left: Option<u32>,
@@ -223,6 +225,9 @@ impl PPr<'_> {
         let mut x = String::new();
         if let Some(s) = self.style.filter(|s| *s != "Normal") {
             let _ = write!(x, "<w:pStyle w:val=\"{s}\"/>");
+        }
+        if self.no_keep_next {
+            x.push_str("<w:keepNext w:val=\"0\"/>");
         }
         if self.page_break {
             x.push_str("<w:pageBreakBefore/>");
@@ -1114,8 +1119,14 @@ impl<'a, 'p> Writer<'a, 'p> {
             let drawing = self.inline(&pic, emu(w), emu(w * pic.aspect), &f.label, &f.alt);
             self.para(&PPr::style("Figure"), &drawing);
         }
+        // The Caption style keeps with the next paragraph, as a table's caption must keep with its table. A
+        // figure's caption sits under its image, so it keeps with nothing after it (its map key apart): else
+        // Word chains a run of figures into one block that cannot break, and leaves a page blank before it.
         let caption = self.bookmarked(&f.anchor, run(&f.caption_text(), ""));
-        self.para(&PPr::style("Caption"), &caption);
+        self.para(
+            &PPr { style: Some("Caption"), no_keep_next: f.map_key.is_none(), ..PPr::default() },
+            &caption,
+        );
         if let Some(k) = &f.map_key {
             self.para(&PPr::style("MapKey"), &run(k, ""));
         }

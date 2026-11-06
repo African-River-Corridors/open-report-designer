@@ -888,3 +888,44 @@ fn libreoffice_opens_the_example_when_asked() {
     assert!(pdf.starts_with(b"%PDF"));
     eprintln!("LibreOffice PDF: {} bytes at {}", pdf.len(), dir.display());
 }
+
+#[test]
+fn a_figure_caption_does_not_keep_with_the_next_figure_but_a_table_caption_keeps_with_its_table() {
+    // The Caption style keeps with the next paragraph. A table's caption sits above its table and must keep
+    // with it. A figure's caption sits below its image: keeping it with the next figure chained a run of
+    // figures into one block that Word could not break, and Word left a page almost blank before it.
+    let pkg = Pkg::read(&example_docx());
+    let styles = pkg.text("word/styles.xml");
+    let s = Xml::parse(&styles).unwrap();
+    let caption_style = s
+        .descendants()
+        .find(|n| n.has_tag_name((W, "style")) && wattr(*n, "styleId") == Some("Caption"))
+        .expect("a Caption style");
+    assert!(
+        caption_style.descendants().any(|n| n.has_tag_name((W, "keepNext"))),
+        "the style keeps with next"
+    );
+    let body = pkg.text("word/document.xml");
+    let x = Xml::parse(&body).unwrap();
+    let elements = |n: Node| n.is_element();
+    let (mut figures, mut tables) = (0, 0);
+    for p in x.descendants().filter(|n| n.has_tag_name((W, "p")) && para_style(*n) == "Caption") {
+        let off = p
+            .children()
+            .find(|n| n.has_tag_name((W, "pPr")))
+            .and_then(|ppr| ppr.children().find(|n| n.has_tag_name((W, "keepNext"))))
+            .is_some_and(|k| wattr(k, "val") == Some("0"));
+        let prev = p.prev_siblings().skip(1).find(|n| elements(*n));
+        let next = p.next_siblings().skip(1).find(|n| elements(*n));
+        let after_image = prev.is_some_and(|n| n.has_tag_name((W, "p")) && para_style(n) == "Figure");
+        let before_key = next.is_some_and(|n| n.has_tag_name((W, "p")) && para_style(n) == "MapKey");
+        if after_image {
+            figures += 1;
+            assert_eq!(off, !before_key, "a figure caption keeps with its map key only: {}", para_text(p));
+        } else if next.is_some_and(|n| n.has_tag_name((W, "tbl"))) {
+            tables += 1;
+            assert!(!off, "a table caption keeps with its table: {}", para_text(p));
+        }
+    }
+    assert!(figures >= 2 && tables >= 1, "figures {figures}, tables {tables}");
+}
