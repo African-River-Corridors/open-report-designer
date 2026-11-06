@@ -949,8 +949,13 @@ impl<'a, 'p> Writer<'a, 'p> {
 
     /// The logo strip on a card: one column per logo, a rule between them, each logo `PHOTO.logo_mm` high
     /// in a box of `logo_box_mm` (narrower when it would not fit its column), the name and the role.
+    ///
+    /// The space under the text is the last paragraph's spacing after, not the cells' bottom margin. Word
+    /// draws a dark seam on screen where a shaded cell's text ends and its bottom margin begins, across the
+    /// whole strip, though its PDF export does not; the paragraph spacing is shaded as one with the text.
     fn logo_card(&mut self, ground: &str) {
         let ph = PHOTO;
+        let pad = twips(ph.logo_pad_y_mm as f32);
         let logos = self.p.doc.cover_logos.clone();
         let n = logos.len() as u32;
         let tw = twips(self.text_width_mm() as f32);
@@ -963,7 +968,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x,
             "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/>\
              <w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"{rule}\"/></w:tblBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/>\
-             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"{m}\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid>",
+             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"{m}\" w:type=\"dxa\"/><w:left w:w=\"{x}\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"{x}\" w:type=\"dxa\"/></w:tblCellMar><w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid>",
             m = twips(ph.logo_pad_y_mm as f32),
             x = twips(1.0),
         );
@@ -992,14 +997,22 @@ impl<'a, 'p> Writer<'a, 'p> {
                     twips(ph.logo_box_mm as f32)
                 );
             }
+            let last = |is_last: bool| {
+                if is_last { format!("<w:spacing w:after=\"{pad}\"/>") } else { String::new() }
+            };
             let _ = write!(
                 self.x,
-                "<w:p><w:pPr><w:pStyle w:val=\"LogoName\"/></w:pPr>{}</w:p>",
+                "<w:p><w:pPr><w:pStyle w:val=\"LogoName\"/>{}</w:pPr>{}</w:p>",
+                last(l.role.is_none()),
                 run(&l.name, "")
             );
             if let Some(r) = &l.role {
-                let _ =
-                    write!(self.x, "<w:p><w:pPr><w:pStyle w:val=\"LogoRole\"/></w:pPr>{}</w:p>", run(r, ""));
+                let _ = write!(
+                    self.x,
+                    "<w:p><w:pPr><w:pStyle w:val=\"LogoRole\"/>{}</w:pPr>{}</w:p>",
+                    last(true),
+                    run(r, "")
+                );
             }
             self.x.push_str("</w:tc>");
         }
