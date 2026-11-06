@@ -345,6 +345,40 @@ fn table_padding_stripes_and_line_height_reach_every_writer() {
     assert!(ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).is_ok());
 }
 
+#[test]
+fn a_shaded_table_cell_pads_with_paragraph_spacing_not_a_cell_margin() {
+    // Word for Mac at 170% drew white ticks at the column edges under a shaded header row, where each
+    // cell's bottom margin ended. A shaded cell (header ground or stripe) now has no top or bottom margin
+    // of its own; the table's vertical padding is its paragraph's spacing. Unshaded cells keep the margin.
+    let (d, a) = photo_with(serde_json::json!({ "table_stripe": "#f7f4ee", "table_padding_mm": [1.3, 2.1] }));
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    let top = (1.3f32 * 56.692_913).round() as u32;
+    let spacing = format!("<w:spacing w:before=\"{top}\" w:after=\"{}\"/>", top - 10);
+    let zero = "<w:tcMar><w:top w:w=\"0\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/></w:tcMar>";
+    let (mut shaded, mut plain) = (0, 0);
+    for tbl in body
+        .split("<w:tbl>")
+        .skip(1)
+        .filter(|t| t.starts_with("<w:tblPr><w:tblStyle w:val=\"ReportTable\"/>"))
+    {
+        if !tbl.contains("<w:tblHeader/>") {
+            continue; // the document-control table and headless tables are out of scope
+        }
+        for tc in tbl.split("<w:tc>").skip(1) {
+            if tc.contains("<w:shd ") {
+                shaded += 1;
+                assert!(tc.contains(zero), "a shaded cell keeps a vertical margin: {tc:.200}");
+                assert!(tc.contains(&spacing), "a shaded cell lost its padding: {tc:.300}");
+            } else {
+                plain += 1;
+                assert!(!tc.contains("<w:tcMar>"), "an unshaded cell has its own margin");
+            }
+        }
+    }
+    assert!(shaded > 0 && plain > 0, "the example has shaded and unshaded cells ({shaded}, {plain})");
+}
+
 /// The `<w:tbl>` that holds `marker`, from its opening tag to its close.
 fn table_holding<'a>(xml: &'a str, marker: &str) -> &'a str {
     let at = xml.find(marker).expect("marker");

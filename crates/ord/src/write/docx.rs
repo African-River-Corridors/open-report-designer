@@ -429,6 +429,23 @@ impl<'a, 'p> Writer<'a, 'p> {
         }
     }
 
+    /// The cell margin and paragraph spacing of a shaded cell, as `(tcMar, spacing)`. Word for Mac paints each
+    /// shaded cell on its own and, at some zooms (170%), leaves hairline gaps at the column edges where a cell's
+    /// bottom margin ends: white ticks under a shaded header. So a shaded cell has no top or bottom margin of its
+    /// own, and the table's vertical padding becomes the paragraph's spacing instead: same height, no ticks.
+    fn shaded_pad(&self, header: bool) -> (String, String) {
+        let t = &self.p.template;
+        let padding = if header { t.table_padding_mm } else { t.headless_padding_mm.or(t.table_padding_mm) };
+        match padding {
+            Some([y, _]) => (
+                "<w:tcMar><w:top w:w=\"0\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/></w:tcMar>"
+                    .to_string(),
+                format!("<w:spacing w:before=\"{}\" w:after=\"{}\"/>", twips(y), twips(y).saturating_sub(10)),
+            ),
+            None => (String::new(), String::new()),
+        }
+    }
+
     /// The shading of a body row: the stripe on every second row of a table with a header row (0.2).
     fn stripe(&self, row: usize, header: bool) -> String {
         match self.p.template.table_stripe {
@@ -684,13 +701,15 @@ impl<'a, 'p> Writer<'a, 'p> {
         };
         let ground = parts::hex(self.p.template.accent_ground);
         let head_style = self.head_style();
+        let (mar, sp) =
+            if label_column { (String::new(), String::new()) } else { self.shaded_pad(head.is_some()) };
         if let Some(head) = head {
             self.x.push_str("<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>");
             for (i, h) in head.iter().enumerate() {
                 let _ = write!(
                     self.x,
-                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/></w:tcPr>\
-                     <w:p><w:pPr><w:pStyle w:val=\"{head_style}\"/>{}</w:pPr>{h}</w:p></w:tc>",
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/>{mar}</w:tcPr>\
+                     <w:p><w:pPr><w:pStyle w:val=\"{head_style}\"/>{sp}{}</w:pPr>{h}</w:p></w:tc>",
                     cols.get(i).copied().unwrap_or(0),
                     jc(i),
                 );
@@ -700,6 +719,7 @@ impl<'a, 'p> Writer<'a, 'p> {
         for (r, row) in rows.iter().enumerate() {
             self.x.push_str("<w:tr><w:trPr><w:cantSplit/></w:trPr>");
             let shd = if label_column { String::new() } else { self.stripe(r, head.is_some()) };
+            let (rmar, rsp) = if shd.is_empty() { ("", "") } else { (mar.as_str(), sp.as_str()) };
             for (i, cell) in row.iter().enumerate() {
                 let style = match (label_column, head.is_some(), i) {
                     (true, _, 0) => "TableHeader",
@@ -710,7 +730,7 @@ impl<'a, 'p> Writer<'a, 'p> {
                 };
                 let _ = write!(
                     self.x,
-                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"{style}\"/>{}</w:pPr>{cell}</w:p></w:tc>",
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{shd}{rmar}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"{style}\"/>{rsp}{}</w:pPr>{cell}</w:p></w:tc>",
                     cols.get(i).copied().unwrap_or(0),
                     jc(i),
                 );
@@ -733,10 +753,11 @@ impl<'a, 'p> Writer<'a, 'p> {
             Align::Centre => "<w:jc w:val=\"center\"/>",
             Align::Right => "<w:jc w:val=\"right\"/>",
         };
+        let (mar, sp) = self.shaded_pad(true);
         let cell = |w: u32, extra: &str, a: Align, content: &str| {
             format!(
-                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/>{extra}<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/></w:tcPr>\
-                 <w:p><w:pPr><w:pStyle w:val=\"{head_style}\"/>{}</w:pPr>{content}</w:p></w:tc>",
+                "<w:tc><w:tcPr><w:tcW w:w=\"{w}\" w:type=\"dxa\"/>{extra}<w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"{ground}\"/>{mar}</w:tcPr>\
+                 <w:p><w:pPr><w:pStyle w:val=\"{head_style}\"/>{sp}{}</w:pPr>{content}</w:p></w:tc>",
                 jc(a)
             )
         };
@@ -783,10 +804,11 @@ impl<'a, 'p> Writer<'a, 'p> {
         for (r, row) in rows.iter().enumerate() {
             self.x.push_str("<w:tr><w:trPr><w:cantSplit/></w:trPr>");
             let shd = self.stripe(r, true);
+            let (rmar, rsp) = if shd.is_empty() { ("", "") } else { (mar.as_str(), sp.as_str()) };
             for (j, content) in row.iter().enumerate() {
                 let _ = write!(
                     self.x,
-                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{shd}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"TableText\"/>{}</w:pPr>{content}</w:p></w:tc>",
+                    "<w:tc><w:tcPr><w:tcW w:w=\"{}\" w:type=\"dxa\"/>{shd}{rmar}</w:tcPr><w:p><w:pPr><w:pStyle w:val=\"TableText\"/>{rsp}{}</w:pPr>{content}</w:p></w:tc>",
                     cols.get(j).copied().unwrap_or(0),
                     jc(aligns.get(j).copied().unwrap_or_default()),
                 );
