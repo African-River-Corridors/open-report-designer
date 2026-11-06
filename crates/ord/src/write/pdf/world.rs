@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime, Duration};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
-use typst::text::{Font, FontBook};
+use typst::text::{Font, FontBook, FontInfo};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
 
@@ -45,11 +45,24 @@ impl OrdWorld {
         for f in extra_fonts {
             fonts.extend(Font::iter(Bytes::new(f)));
         }
+        let mut infos: Vec<FontInfo> = fonts.iter().map(|f| f.info().clone()).collect();
+        // A document font is also filed under the family its own name table gives, when the typesetter
+        // filed it under a shorter one ("Barlow Semi Condensed" as well as "Barlow"). The alias is the same
+        // font at a new index, after every other font, so no earlier index moves.
+        for i in FONTS.len()..fonts.len() {
+            let font = fonts[i].clone();
+            let Some(own) = crate::fonts::own_family(&font) else { continue };
+            if own.eq_ignore_ascii_case(&infos[i].family) {
+                continue;
+            }
+            infos.push(FontInfo { family: own, ..infos[i].clone() });
+            fonts.push(font);
+        }
         OrdWorld {
             main: Source::new(id(MAIN), source),
             files: files.into_iter().map(|(p, b)| (id(&p), Bytes::new(b))).collect(),
             date: date.and_then(|(y, m, d)| Datetime::from_ymd(y, m, d)),
-            book: LazyHash::new(FontBook::from_fonts(&fonts)),
+            book: LazyHash::new(FontBook::from_infos(infos)),
             fonts,
         }
     }
