@@ -1,0 +1,1 @@
+Word: a shaded table cell (header ground or stripe) pads with paragraph spacing instead of its own top and bottom margin, so Word for Mac no longer draws white ticks at the column edges under a shaded header row.
