@@ -83,7 +83,7 @@ one-cell shaded tables and the cover section's own footer for Word; HTML element
 | `heading_bold` | false | |
 | `heading_numbers` | `spaced` | `spaced` ("2.1  Scope") or `dotted` ("2. Scope", "2.1 Scope"). |
 | `section_page_break` | true | A new page before each top-level section. |
-| `heading_font`, `body_font` | bundled | Family names. A family that is neither bundled nor given by a font in `fonts` refuses the PDF (`ORD022`). Word names the family. |
+| `heading_font`, `body_font` | bundled | Family names. A family that is neither bundled nor given by a font in `fonts` refuses the PDF (`ORD022`). A font in `fonts` answers to the family its name table gives (name ID 16, or else 1) and to the shorter family the typesetter files it under, which drops width and weight words ("Barlow Semi Condensed" and "Barlow"); so does the text of an SVG figure. Word names the family. |
 | `fonts` | none | Asset ids of font files, for the PDF and HTML writers. Word does not embed them. |
 | `body_size_pt` | 10 | 6 to 16. |
 | `margins_mm` | 25/25/20/20 | `{ top, bottom, left, right }`, 0 to 60. |

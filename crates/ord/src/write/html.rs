@@ -478,13 +478,23 @@ fn style(p: &Prepared, h: &mut String) {
             let style =
                 if info.variant.style == typst::text::FontStyle::Normal { "normal" } else { "italic" };
             let format = if a.bytes.starts_with(b"OTTO") { "opentype" } else { "truetype" };
-            let _ = writeln!(
-                h,
-                "@font-face {{ font-family: \"{}\"; font-weight: {}; font-style: {style}; src: url(data:font/ttf;base64,{}) format(\"{format}\"); }}",
-                info.family.replace('"', ""),
-                info.variant.weight.to_number(),
-                base64::engine::general_purpose::STANDARD.encode(&a.bytes)
-            );
+            let data = base64::engine::general_purpose::STANDARD.encode(&a.bytes);
+            // The family the typesetter gives it, and the family the font names for itself when that differs
+            // ("Barlow" and "Barlow Semi Condensed"), as the PDF writer finds it by both.
+            let mut families = vec![info.family.clone()];
+            if let Some(own) =
+                crate::fonts::own_family(&font).filter(|o| !o.eq_ignore_ascii_case(&info.family))
+            {
+                families.push(own);
+            }
+            for family in families {
+                let _ = writeln!(
+                    h,
+                    "@font-face {{ font-family: \"{}\"; font-weight: {}; font-style: {style}; src: url(data:font/ttf;base64,{data}) format(\"{format}\"); }}",
+                    family.replace(['"', '\\', '<', '>'], ""),
+                    info.variant.weight.to_number(),
+                );
+            }
         }
     }
     let tnum = if t.table_tabular_figures { "font-variant-numeric: tabular-nums;" } else { "" };
