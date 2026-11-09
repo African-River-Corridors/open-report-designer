@@ -39,6 +39,8 @@ pub struct Resolved {
     pub cover_details: Option<Vec<(String, String)>>,
     /// (0.2) The text on the left of the running foot.
     pub footer: Option<String>,
+    /// (0.2) Small print at the foot of the cover page only.
+    pub cover_notice: Option<Vec<MdBlock>>,
 }
 
 /// Document control as the writers print it.
@@ -326,6 +328,7 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
     }
 
     let mut summary = doc.summary.as_deref().map(|s| r.prose(s, "/summary"));
+    let mut cover_notice = doc.cover_notice.as_deref().map(|s| r.prose(s, "/cover_notice"));
 
     // Cross-references, now that every target is known.
     let targets = std::mem::take(&mut r.targets);
@@ -344,6 +347,9 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
     };
     if let Some(s) = summary.as_mut() {
         fix(s, "/summary");
+    }
+    if let Some(s) = cover_notice.as_mut() {
+        fix(s, "/cover_notice");
     }
     for (path, blocks) in r.prose_paths(&mut body, &mut appendices) {
         fix(blocks, &path);
@@ -407,6 +413,7 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
             .as_ref()
             .map(|d| d.iter().map(|i| (i.label.clone(), i.value.clone())).collect()),
         footer: doc.footer.clone(),
+        cover_notice,
     };
     (resolved, r.findings)
 }

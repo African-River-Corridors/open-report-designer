@@ -32,6 +32,7 @@ passes values, never a template language.
 | `cover_logos` | `[{ asset, name, role? }]` | A logo strip on a photo cover: each logo with a name and a role, such as the parties to a report. |
 | `cover_details` | `[{ label, value }]` | The rows of the photo cover's control block, in place of number, revision, date and status. An empty list leaves the block out. |
 | `footer` | string | The left of the running foot, in place of the organisation and the notice. |
+| `cover_notice` | string (Markdown) | Small print at the foot of the cover page only, such as a disclaimer. Never in the running foot. On the plain cover it follows the control block. |
 
 ### 3.2 Tables (additions)
 
@@ -64,7 +65,9 @@ With `template.cover_layout: "photo"`, the cover is, top to bottom, on the cover
 5. the logo strip on a card: one column per logo, a rule between them, each logo 9 mm high, its name and role;
 6. the control block: a "Document control" head and one row per `cover_details` row (or number, revision,
    date and status), on lines of the accent;
-7. a foot: the number and revision on the left, the sensitivity on the right.
+7. the `cover_notice`, if any: small print pushed to the foot of the cover (a filling photograph gives up
+   height for it, so the cover stays one page);
+8. a foot: the number and revision on the left, the sensitivity on the right.
 
 The class name is not printed. Each writer draws the same thing: Typst blocks for the PDF; anchored pictures,
 one-cell shaded tables and the cover section's own footer for Word; HTML elements for HTML.

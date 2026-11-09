@@ -530,7 +530,28 @@ pub fn styles(p: &Prepared) -> String {
     let title_pt = f64::from(t.cover_title_pt);
     let panel_line_ink = hex(t.cover_ink.over(t.cover_panel_ground.unwrap_or(t.paper), 0.18));
     let _ = &panel_line_ink;
+    let notice_ink = if t.cover_layout == crate::model::CoverLayout::Photo {
+        hex(t.cover_ink.over(t.paper, 0.85))
+    } else {
+        ink2.clone()
+    };
     let extra: Vec<(String, String, &str, &str, String, String)> = vec![
+        (
+            "CoverNotice".into(),
+            "Cover Notice".into(),
+            "Normal",
+            "CoverNotice",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                mm(ph.notice_par_gap_mm),
+                exact(ph.notice_pt, ph.notice_lh)
+            ),
+            format!(
+                "<w:color w:val=\"{notice_ink}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(ph.notice_pt),
+                hp(ph.notice_pt)
+            ),
+        ),
         (
             "TableHead".into(),
             "Table Head".into(),
@@ -695,6 +716,7 @@ pub fn styles(p: &Prepared) -> String {
     for style in extra {
         let used = match style.0.as_str() {
             "TableHead" => t.table_header_ink != t.ink,
+            "CoverNotice" => p.doc.cover_notice.is_some(),
             "TableLabel" | "TablePlain" => crate::resolve::has_headless(&p.doc),
             _ => t.cover && t.cover_layout == crate::model::CoverLayout::Photo,
         };

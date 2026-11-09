@@ -292,6 +292,11 @@ pub struct CoverLook {
     pub panel_value_pt: f64,
     pub panel_label_col: f64,
     pub foot_pt: f64,
+    /// The cover notice (`cover_notice`): the least space above it, its size, line height and paragraph gap.
+    pub notice_above_mm: f64,
+    pub notice_pt: f64,
+    pub notice_lh: f64,
+    pub notice_par_gap_mm: f64,
     /// Room left under the content when the photograph fills, so a writer whose lines run a little taller
     /// still keeps the cover on one page.
     pub slack_mm: f64,
@@ -323,6 +328,10 @@ pub const PHOTO: CoverLook = CoverLook {
     panel_value_pt: 9.6,
     panel_label_col: 0.32,
     foot_pt: 7.6,
+    notice_above_mm: 6.0,
+    notice_pt: 7.2,
+    notice_lh: 1.4,
+    notice_par_gap_mm: 1.6,
     slack_mm: 4.0,
 };
 

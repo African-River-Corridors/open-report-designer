@@ -55,6 +55,10 @@ pub struct Document {
     /// (0.2) The text on the left of the running foot, in place of the organisation and the notice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub footer: Option<String>,
+    /// (0.2) Small print at the foot of the cover page (Markdown), such as a disclaimer. Unlike `notice`, it
+    /// is printed on the cover only: never in the running foot or on any other page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_notice: Option<String>,
     /// The main matter.
     pub body: Vec<Block>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

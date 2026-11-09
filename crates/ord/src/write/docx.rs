@@ -591,6 +591,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x.push_str("</w:tr></w:tbl>");
             self.after_table = true;
         }
+        self.cover_notice();
         // The cover section ends here: it has no running head or foot.
         let sect = self.sect_pr(false);
         self.para(&PPr { sect: Some(sect), ..PPr::default() }, "");
@@ -970,8 +971,18 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x.push_str("</w:tbl>");
             self.after_table = true;
         }
+        self.cover_notice();
         let sect = self.sect_pr(false);
         self.para(&PPr { sect: Some(sect), ..PPr::default() }, "");
+    }
+
+    /// The cover notice (`cover_notice`): small print at the end of the cover, in the `CoverNotice` style.
+    /// On a photo cover the photograph leaves room for it (`pdf::band_mm`), so it sits at the foot of the page.
+    fn cover_notice(&mut self) {
+        if let Some(n) = self.p.doc.cover_notice.clone() {
+            self.spacer(PHOTO.notice_above_mm, "");
+            self.md_blocks(&n, Ctx { style: "CoverNotice", depth: 0 });
+        }
     }
 
     /// The logo strip on a card: one column per logo, a rule between them, each logo `PHOTO.logo_mm` high

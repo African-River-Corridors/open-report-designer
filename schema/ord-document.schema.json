@@ -95,6 +95,13 @@
         "null"
       ]
     },
+    "cover_notice": {
+      "description": "(0.2) Small print at the foot of the cover page (Markdown), such as a disclaimer. Unlike `notice`, it\nis printed on the cover only: never in the running foot or on any other page.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "body": {
       "description": "The main matter.",
       "type": "array",

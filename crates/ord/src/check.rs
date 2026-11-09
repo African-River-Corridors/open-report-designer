@@ -38,6 +38,9 @@ fn version(doc: &Document, out: &mut Vec<Finding>) {
     if doc.footer.is_some() {
         used.push("/footer".into());
     }
+    if doc.cover_notice.is_some() {
+        used.push("/cover_notice".into());
+    }
     for (id, a) in &doc.assets {
         if matches!(a.media_type, crate::model::MediaType::Jpeg | crate::model::MediaType::Font) {
             used.push(format!("/assets/{}/media_type", id.replace('~', "~0").replace('/', "~1")));

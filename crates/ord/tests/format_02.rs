@@ -58,10 +58,12 @@ fn a_01_document_may_not_use_a_02_field() {
         { "type": "table", "columns": [{ "title": "A", "width": 0.5 }], "rows": [[{ "markdown": "*x*" }]] }
     ]));
     v["footer"] = "Foot".into();
+    v["cover_notice"] = "Small print.".into();
     v["template"] = serde_json::json!({ "ink": "#000000", "cover_layout": "photo" });
     let got = codes_of(&v, &Default::default());
     for path in [
         "/footer",
+        "/cover_notice",
         "/template/cover_layout",
         "/body/0/header",
         "/body/1/caption",
@@ -447,4 +449,112 @@ fn the_logo_strip_pads_its_foot_with_paragraph_spacing_not_a_cell_margin() {
         let tail = format!("<w:pStyle w:val=\"{style}\"/><w:spacing w:after=\"{top}\"/>");
         assert_eq!(strip.matches(&tail).count(), n, "each cell's last paragraph carries the pad");
     }
+}
+
+// --- The cover notice ----------------------------------------------------------------------------------
+
+const NOTICE: &str = "Shared as is, for discussion only.\n\nNot an offer of any security. The Example \
+Company makes no representation or warranty as to the accuracy of this document, and accepts no liability \
+for any loss arising from its use. Each recipient must take its own advice. Forward-looking statements rest \
+on assumptions and are not guarantees; actual results may differ materially from them.";
+
+fn pdf_pages(bytes: &[u8]) -> Vec<String> {
+    let doc = lopdf::Document::load_mem(bytes).expect("a PDF");
+    let pages: Vec<u32> = doc.get_pages().keys().copied().collect();
+    pages
+        .iter()
+        .map(|n| doc.extract_text(&[*n]).unwrap_or_default().split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect()
+}
+
+fn with_notice(mut d: ord::Document) -> ord::Document {
+    d.cover_notice = Some(NOTICE.into());
+    d
+}
+
+fn screening() -> (ord::Document, ord::Assets) {
+    let (mut d, a) = load(&repo().join("examples/screening-report.json"));
+    d.ord = "0.2".into();
+    (d, a)
+}
+
+#[test]
+fn the_cover_notice_prints_on_the_cover_page_only_in_the_pdf() {
+    for (name, (d, a)) in [("photo", photo()), ("plain", screening())] {
+        let without = ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+        let d = with_notice(d);
+        let pdf = ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+        let pages = pdf_pages(&pdf);
+        assert!(pages[0].contains("Shared as is, for discussion only."), "{name}: cover: {}", pages[0]);
+        assert!(pages[0].contains("actual results may differ materially from them."), "{name}");
+        for (i, pg) in pages.iter().enumerate().skip(1) {
+            assert!(!pg.contains("Shared as is"), "{name}: page {} holds the notice: {pg}", i + 1);
+        }
+        // The notice takes no page of its own: the cover is still one page.
+        assert_eq!(pages.len(), pdf_pages(&without).len(), "{name}: page count");
+    }
+}
+
+#[test]
+fn the_cover_notice_follows_the_control_block_at_the_foot_of_the_photo_cover() {
+    let d = with_notice(photo().0);
+    let a = photo().1;
+    let pdf = ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    let (_, last_row) = p.cover_rows().pop().expect("a control block");
+    let cover = &pdf_pages(&pdf)[0];
+    let control = cover.find(&last_row).expect("the control block's last row");
+    let notice = cover.find("Shared as is").expect("the notice");
+    assert!(notice > control, "the notice comes after the control block: {cover}");
+}
+
+#[test]
+fn a_long_cover_notice_makes_the_photograph_shorter_not_the_cover_longer() {
+    let (d, a) = photo_with(serde_json::json!({
+        "cover_image_fill": true, "cover_image_min_mm": 30, "cover_image_height_mm": 200
+    }));
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    let before = ord::write::pdf::band_mm(&p);
+    let d2 = with_notice(d.clone());
+    let (p2, _) = prepare(&d2, &a, &ord::builtin_register()).unwrap();
+    let after = ord::write::pdf::band_mm(&p2);
+    assert!(after < before - 10.0, "the band makes room: {before} mm then {after} mm");
+    assert!(after > 30.0, "not clamped: {after} mm");
+    let pdf = ord::render(&d2, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+    let without = ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+    assert_eq!(pdf_pages(&pdf).len(), pdf_pages(&without).len());
+}
+
+#[test]
+fn the_cover_notice_is_in_no_running_foot() {
+    for (name, (d, a)) in [("photo", photo()), ("plain", screening())] {
+        let d = with_notice(d);
+        let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+        let body = docx_part(&docx, "word/document.xml").unwrap();
+        assert_eq!(body.matches("Shared as is").count(), 1, "{name}: once, on the cover");
+        assert!(body.contains("<w:pStyle w:val=\"CoverNotice\"/>"), "{name}");
+        for part in ["word/footer1.xml", "word/footer2.xml", "word/header1.xml"] {
+            if let Some(x) = docx_part(&docx, part) {
+                assert!(!x.contains("Shared as is"), "{name}: {part} holds the notice");
+            }
+        }
+        let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+        assert!(!p.footer_left().contains("Shared as is"), "{name}");
+        let html =
+            String::from_utf8(ord::render(&d, &a, &ord::builtin_register(), Format::Html).unwrap().bytes)
+                .unwrap();
+        assert_eq!(html.matches("Shared as is").count(), 1, "{name}: HTML, once");
+        let cover_end = html.find("</header>").unwrap();
+        assert!(html.find("Shared as is").unwrap() < cover_end, "{name}: HTML, in the cover");
+    }
+}
+
+#[test]
+fn a_document_with_no_cover_notice_has_no_cover_notice_style() {
+    let (d, a) = photo();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    assert!(!docx_part(&docx, "word/styles.xml").unwrap().contains("CoverNotice"));
+    let html = String::from_utf8(ord::render(&d, &a, &ord::builtin_register(), Format::Html).unwrap().bytes)
+        .unwrap();
+    assert!(!html.contains("cover-notice"));
 }

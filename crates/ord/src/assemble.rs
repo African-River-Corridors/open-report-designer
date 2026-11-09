@@ -43,6 +43,8 @@ pub struct Manifest {
     pub cover_details: Option<Vec<DataItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub footer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_notice: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub assets: BTreeMap<String, AssetSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,6 +162,7 @@ pub fn assemble(
         cover_logos: m.cover_logos,
         cover_details: m.cover_details,
         footer: m.footer,
+        cover_notice: m.cover_notice,
         body: body_chapters.iter().map(|c| section(c)).collect(),
         appendices: appendix_chapters
             .iter()
