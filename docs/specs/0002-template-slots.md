@@ -33,6 +33,7 @@ passes values, never a template language.
 | `cover_details` | `[{ label, value }]` | The rows of the photo cover's control block, in place of number, revision, date and status. An empty list leaves the block out. |
 | `footer` | string | The left of the running foot, in place of the organisation and the notice. |
 | `cover_notice` | string (Markdown) | Small print at the foot of the cover page only, such as a disclaimer. Never in the running foot. On the plain cover it follows the control block. |
+| `count_cover` | boolean | Whether the cover counts in the page numbers. Default true. With false, and a cover, the page after the cover is page 1 and the total leaves the cover out ("Page 1 of 8" to "Page 8 of 8" after a cover); the contents list uses the same numbers. Word restarts the body section at 1 and prints its page count (`SECTIONPAGES`) as the total. No effect without a cover. |
 
 ### 3.2 Tables (additions)
 

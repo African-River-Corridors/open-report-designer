@@ -558,3 +558,114 @@ fn a_document_with_no_cover_notice_has_no_cover_notice_style() {
         .unwrap();
     assert!(!html.contains("cover-notice"));
 }
+
+fn uncounted(mut d: ord::Document) -> ord::Document {
+    d.count_cover = Some(false);
+    d
+}
+
+/// The "Page n of N" of a page's text, as numbers.
+fn page_of(page: &str) -> Option<(usize, usize)> {
+    let at = page.rfind("Page ")?;
+    let mut w = page[at + 5..].split_whitespace();
+    let n = w.next()?.parse().ok()?;
+    (w.next()? == "of").then_some(())?;
+    Some((n, w.next()?.trim_matches(|c: char| !c.is_ascii_digit()).parse().ok()?))
+}
+
+#[test]
+fn with_count_cover_false_the_page_after_the_cover_is_page_1_of_the_pages_after_it() {
+    for (name, (d, a)) in [("photo", photo()), ("plain", screening())] {
+        let pdf = ord::render(&uncounted(d), &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+        let pages = pdf_pages(&pdf);
+        let n = pages.len();
+        assert!(n >= 2, "{name}: {n} pages");
+        assert_eq!(page_of(&pages[0]), None, "{name}: the cover has no page number: {}", pages[0]);
+        for (i, pg) in pages.iter().enumerate().skip(1) {
+            assert_eq!(page_of(pg), Some((i, n - 1)), "{name}: page {} of the file: {pg}", i + 1);
+        }
+    }
+}
+
+#[test]
+fn by_default_the_cover_counts_as_page_1() {
+    for (name, (d, a)) in [("photo", photo()), ("plain", screening())] {
+        let pdf = ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+        let pages = pdf_pages(&pdf);
+        let n = pages.len();
+        assert_eq!(page_of(&pages[0]), None, "{name}: the cover has no page number");
+        assert_eq!(page_of(&pages[1]), Some((2, n)), "{name}");
+        assert_eq!(page_of(&pages[n - 1]), Some((n, n)), "{name}");
+        // `count_cover: true` is the default, byte for byte.
+        let mut t = d.clone();
+        t.count_cover = Some(true);
+        let same = ord::render(&t, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+        assert_eq!(pdf_pages(&same), pages, "{name}");
+    }
+}
+
+#[test]
+fn the_contents_list_uses_the_same_page_numbers_as_the_foot() {
+    let (d, a) = screening();
+    let d = uncounted(ord::Document { contents: Some(true), ..d });
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    let pdf = ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).unwrap().bytes;
+    let pages = pdf_pages(&pdf);
+    let contents = pages.iter().position(|pg| pg.contains("Contents")).expect("a contents page");
+    // Every entry's page number in the contents list is the foot number of the page its heading opens.
+    let mut checked = 0;
+    for e in &p.doc.toc {
+        let entry = &pages[contents];
+        let Some(at) = entry.find(&e.title) else { continue };
+        let listed: usize = entry[at + e.title.len()..]
+            .split_whitespace()
+            .find_map(|w| w.trim_matches('.').parse().ok())
+            .expect("a page number");
+        let opens = pages.iter().enumerate().skip(contents + 1).find(|(_, pg)| pg.contains(&e.title));
+        let (_, pg) = opens.expect("the heading's page");
+        assert_eq!(page_of(pg).map(|(n, _)| n), Some(listed), "{}", e.title);
+        checked += 1;
+    }
+    assert!(checked > 0, "no contents entry checked: {}", pages[contents]);
+}
+
+#[test]
+fn with_count_cover_false_word_numbers_the_body_section_from_1() {
+    for (name, (d, a)) in [("photo", photo()), ("plain", screening())] {
+        let docx =
+            ord::render(&uncounted(d.clone()), &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+        let body = docx_part(&docx, "word/document.xml").unwrap();
+        // Two sections: the cover, then the body, which starts again at 1.
+        let sects: Vec<&str> = body.split("<w:sectPr>").skip(1).collect();
+        assert_eq!(sects.len(), 2, "{name}");
+        assert!(!sects[0].contains("w:pgNumType"), "{name}: the cover section");
+        assert!(sects[1].contains("<w:pgNumType w:start=\"1\"/>"), "{name}: the body section");
+        let foot = docx_part(&docx, "word/footer1.xml").unwrap();
+        let instr: Vec<&str> =
+            foot.split("w:instr=\"").skip(1).map(|s| s.split('"').next().unwrap().trim()).collect();
+        assert_eq!(instr, ["PAGE", "SECTIONPAGES"], "{name}");
+        // The default is unchanged.
+        let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+        assert!(!docx_part(&docx, "word/document.xml").unwrap().contains("w:pgNumType"), "{name}");
+        let foot = docx_part(&docx, "word/footer1.xml").unwrap();
+        assert!(foot.contains(" NUMPAGES ") && !foot.contains("SECTIONPAGES"), "{name}");
+    }
+}
+
+#[test]
+fn without_a_cover_count_cover_changes_nothing() {
+    let (d, a) = screening();
+    let mut t = d.template.clone().unwrap_or_default();
+    t.cover = Some(false);
+    let d = ord::Document { template: Some(t), ..d };
+    for f in [Format::Pdf, Format::Docx] {
+        let a1 = ord::render(&d, &a, &ord::builtin_register(), f).unwrap().bytes;
+        let a2 = ord::render(&uncounted(d.clone()), &a, &ord::builtin_register(), f).unwrap().bytes;
+        if f == Format::Pdf {
+            assert_eq!(pdf_pages(&a1), pdf_pages(&a2));
+        } else {
+            assert_eq!(docx_part(&a1, "word/document.xml"), docx_part(&a2, "word/document.xml"));
+            assert_eq!(docx_part(&a1, "word/footer1.xml"), docx_part(&a2, "word/footer1.xml"));
+        }
+    }
+}

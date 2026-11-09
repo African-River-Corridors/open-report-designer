@@ -102,6 +102,13 @@
         "null"
       ]
     },
+    "count_cover": {
+      "description": "(0.2) Whether the cover page counts in the page numbers. Default true. With false, and a cover, the\npage after the cover is page 1 and the total leaves the cover out: a cover and eight pages read\n\"Page 1 of 8\" to \"Page 8 of 8\". The cover has no page number either way. No effect without a cover.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "body": {
       "description": "The main matter.",
       "type": "array",

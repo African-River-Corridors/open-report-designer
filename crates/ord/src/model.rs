@@ -59,6 +59,11 @@ pub struct Document {
     /// is printed on the cover only: never in the running foot or on any other page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover_notice: Option<String>,
+    /// (0.2) Whether the cover page counts in the page numbers. Default true. With false, and a cover, the
+    /// page after the cover is page 1 and the total leaves the cover out: a cover and eight pages read
+    /// "Page 1 of 8" to "Page 8 of 8". The cover has no page number either way. No effect without a cover.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_cover: Option<bool>,
     /// The main matter.
     pub body: Vec<Block>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

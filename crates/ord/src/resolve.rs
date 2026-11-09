@@ -41,6 +41,8 @@ pub struct Resolved {
     pub footer: Option<String>,
     /// (0.2) Small print at the foot of the cover page only.
     pub cover_notice: Option<Vec<MdBlock>>,
+    /// (0.2) Whether the cover counts in the page numbers (`count_cover`, default true).
+    pub count_cover: bool,
 }
 
 /// Document control as the writers print it.
@@ -414,6 +416,7 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
             .map(|d| d.iter().map(|i| (i.label.clone(), i.value.clone())).collect()),
         footer: doc.footer.clone(),
         cover_notice,
+        count_cover: doc.count_cover.unwrap_or(true),
     };
     (resolved, r.findings)
 }

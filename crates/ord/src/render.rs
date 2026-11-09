@@ -224,6 +224,12 @@ impl Prepared<'_> {
         self.doc.footer.is_some() || self.template.foot_sensitivity
     }
 
+    /// True when the page numbers start after the cover: the document has a cover and sets
+    /// `count_cover: false`. The page after the cover is then page 1, and the total leaves the cover out.
+    pub fn numbers_skip_cover(&self) -> bool {
+        self.template.cover && !self.doc.count_cover
+    }
+
     /// The middle of the running foot: the sensitivity label in capitals, when the template asks for it.
     pub fn footer_middle(&self) -> Option<String> {
         self.template.foot_sensitivity.then(|| self.doc.control.sensitivity.to_uppercase())
