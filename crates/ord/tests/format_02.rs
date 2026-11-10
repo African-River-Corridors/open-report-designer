@@ -426,6 +426,22 @@ fn the_word_foot_draws_one_rule_not_one_per_cell() {
 }
 
 #[test]
+fn a_cover_logo_stands_on_a_line_that_can_grow_so_word_does_not_cut_its_top() {
+    // An inline picture stands on the baseline. A line of an exact height keeps room under the baseline for
+    // the font's descent, so a logo nearly as high as the line lost its top in Word and in LibreOffice.
+    let (d, a) = photo();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    let strip = table_holding(&body, "<w:pStyle w:val=\"LogoName\"/>");
+    let lines: Vec<&str> = strip.split("<w:p>").filter(|p| p.contains("<wp:inline ")).collect();
+    assert_eq!(lines.len(), d.cover_logos.len(), "one picture paragraph for each logo");
+    for p in lines {
+        assert!(p.contains("w:lineRule=\"atLeast\""), "the logo's line must be able to grow: {p}");
+        assert!(!p.contains("w:lineRule=\"exact\""), "an exact line cuts the logo's top: {p}");
+    }
+}
+
+#[test]
 fn the_logo_strip_pads_its_foot_with_paragraph_spacing_not_a_cell_margin() {
     // Word drew a dark line on screen across the strip where the cells' text ended and their bottom margin
     // began (its PDF export did not). The space under the text is now the last paragraph's spacing after.

@@ -1,0 +1,1 @@
+- **Cover logos keep their tops in Word.** Each logo stood on a line of an exact height. Word and LibreOffice keep part of such a line under the baseline, so the room above it was less than the logo and its top was cut. The line is now "at least" that height, so it holds the whole logo. The PDF and HTML were not affected.
