@@ -1019,7 +1019,10 @@ impl<'a, 'p> Writer<'a, 'p> {
                 let drawing = self.inline(&pic, emu(w), emu(h), &l.name, &l.name);
                 let _ = write!(
                     self.x,
-                    "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/><w:jc w:val=\"center\"/></w:pPr>{drawing}</w:p>",
+                    // "At least", not "exact": an inline picture stands on the baseline, and a line of an exact
+                    // height keeps part of itself under the baseline for the font's descent. The room left over
+                    // the baseline was less than the logo, so Word and LibreOffice cut the logo's top.
+                    "<w:p><w:pPr><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"atLeast\"/><w:jc w:val=\"center\"/></w:pPr>{drawing}</w:p>",
                     twips(2.0),
                     twips(ph.logo_box_mm as f32)
                 );
