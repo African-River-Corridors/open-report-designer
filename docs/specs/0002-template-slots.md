@@ -119,7 +119,7 @@ in `Head*` styles, written only when the document uses the head.
 | `table_size_pt`, `table_padding_mm` | none | Table text size; cell padding `[top and bottom, left and right]`. |
 | `headless_size_pt`, `headless_padding_mm` | none | The same, for a table with no header row (its first column is in `ink_2`). |
 | `table_stripe` | none | The ground of every second body row of a table with a header row. |
-| `data_ground`, `data_rule` | light ground, ink | The ground of a data box and the colour of the rule on its left. |
+| `data_ground`, `data_rule` | light ground, ink | The ground of a data box and the colour of the rule on its left. A data box with no items prints its notes as body text, in the ink. |
 
 The photo cover's own measurements (title line height, card padding and gaps, logo sizes, the control
 block's padding and sizes, the foot size) are one table in the core, `render::PHOTO`, read by every writer.

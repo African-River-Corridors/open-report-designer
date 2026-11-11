@@ -755,7 +755,15 @@ impl W<'_> {
                         self.o.push_str(")\n");
                     }
                     if let Some(n) = &db.notes {
-                        self.notes(n);
+                        if db.items.is_empty() {
+                            // With no items the notes are the box's whole text, not a note under a table:
+                            // the ink at the text size, as the HTML and Word writers print them.
+                            self.o.push_str("#block(above: 0.6em)[\n");
+                            self.md_blocks(n);
+                            self.o.push_str("]\n");
+                        } else {
+                            self.notes(n);
+                        }
                     }
                     let _ = writeln!(self.o, "] {}\n", label(&db.anchor));
                 }
@@ -1089,5 +1097,8 @@ mod tests {
         assert!(body.contains("Bank works at the upper reach"));
         assert!(src.contains("stroke: (left: 1.5pt + rgb(\"#b8862e\"))"));
         assert!(src.contains("fill: rgb(\"#f7f4ee\")"));
+        // A box with no items prints its notes as its text, in the ink, not as grey notes.
+        let boxed = &src[src.find("What I need from you").unwrap()..src.find("Choose a contractor").unwrap()];
+        assert!(!boxed.contains("size: 0.9em"), "{boxed}");
     }
 }

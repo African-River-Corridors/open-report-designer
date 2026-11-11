@@ -521,6 +521,9 @@ fn the_data_box_ground_and_rule_reach_every_writer() {
     let body = docx_part(&docx, "word/document.xml").unwrap();
     assert!(body.contains("w:fill=\"F7F4EE\""), "no data ground in Word");
     assert!(body.contains("w:color=\"B8862E\""), "no data rule colour in Word");
+    // A box with no items: its notes are body text, not table text.
+    let boxed = table_holding(&body, "Choose a contractor");
+    assert!(!boxed.contains("w:val=\"TableText\""), "{boxed}");
     let html = String::from_utf8(ord::render(&d, &a, &ord::builtin_register(), Format::Html).unwrap().bytes)
         .unwrap();
     assert!(html.contains("--data-ground: #f7f4ee"));

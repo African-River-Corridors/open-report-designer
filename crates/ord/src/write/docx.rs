@@ -1146,7 +1146,9 @@ impl<'a, 'p> Writer<'a, 'p> {
                 "<w:tr><w:tc><w:tcPr><w:tcW w:w=\"{tw}\" w:type=\"dxa\"/><w:gridSpan w:val=\"2\"/>{shd}</w:tcPr>"
             );
             let before = self.x.len();
-            self.md_blocks(notes, Ctx { style: "TableText", depth: 0 });
+            // With no items the notes are the box's whole text: body text, as in the PDF and HTML.
+            let style = if d.items.is_empty() { "Normal" } else { "TableText" };
+            self.md_blocks(notes, Ctx { style, depth: 0 });
             if self.x.len() == before {
                 self.x.push_str("<w:p/>");
             }
