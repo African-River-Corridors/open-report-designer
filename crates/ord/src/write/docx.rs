@@ -473,10 +473,13 @@ impl<'a, 'p> Writer<'a, 'p> {
         } else if let Some(rid) = &self.cover_footer_rid {
             let _ = write!(x, "<w:footerReference w:type=\"default\" r:id=\"{rid}\"/>");
         }
+        // With `count_cover: false` the body section numbers its pages from 1 (the cover is its own section).
+        let restart =
+            if running && self.p.numbers_skip_cover() { "<w:pgNumType w:start=\"1\"/>" } else { "" };
         let _ = write!(
             x,
             "<w:pgSz w:w=\"{}\" w:h=\"{}\"/><w:pgMar w:top=\"{}\" w:right=\"{}\" w:bottom=\"{}\" w:left=\"{}\" w:header=\"{}\" w:footer=\"{}\" w:gutter=\"0\"/>\
-             <w:cols w:space=\"709\"/><w:docGrid w:linePitch=\"360\"/></w:sectPr>",
+             {restart}<w:cols w:space=\"709\"/><w:docGrid w:linePitch=\"360\"/></w:sectPr>",
             twips(t.page_width_mm),
             twips(t.page_height_mm),
             twips(t.margin_top_mm),
@@ -591,6 +594,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x.push_str("</w:tr></w:tbl>");
             self.after_table = true;
         }
+        self.cover_notice();
         // The cover section ends here: it has no running head or foot.
         let sect = self.sect_pr(false);
         self.para(&PPr { sect: Some(sect), ..PPr::default() }, "");
@@ -970,8 +974,18 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.x.push_str("</w:tbl>");
             self.after_table = true;
         }
+        self.cover_notice();
         let sect = self.sect_pr(false);
         self.para(&PPr { sect: Some(sect), ..PPr::default() }, "");
+    }
+
+    /// The cover notice (`cover_notice`): small print at the end of the cover, in the `CoverNotice` style.
+    /// On a photo cover the photograph leaves room for it (`pdf::band_mm`), so it sits at the foot of the page.
+    fn cover_notice(&mut self) {
+        if let Some(n) = self.p.doc.cover_notice.clone() {
+            self.spacer(PHOTO.notice_above_mm, "");
+            self.md_blocks(&n, Ctx { style: "CoverNotice", depth: 0 });
+        }
     }
 
     /// The logo strip on a card: one column per logo, a rule between them, each logo `PHOTO.logo_mm` high
@@ -1427,7 +1441,10 @@ impl<'a, 'p> Writer<'a, 'p> {
         let mut page = run(PAGE_OF.0, "");
         page.push_str("<w:fldSimple w:instr=\" PAGE \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
         page.push_str(&run(PAGE_OF.1, ""));
-        page.push_str("<w:fldSimple w:instr=\" NUMPAGES \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
+        // The total: every page, or with `count_cover: false` the pages of the body section, which is every
+        // page after the cover.
+        let total = if p.numbers_skip_cover() { "SECTIONPAGES" } else { "NUMPAGES" };
+        let _ = write!(page, "<w:fldSimple w:instr=\" {total} \"><w:r><w:t>1</w:t></w:r></w:fldSimple>");
         if !p.grid_foot() {
             // The 0.1 foot: the text, a tab, the page number.
             let content = format!("{}<w:r><w:tab/></w:r>{page}", run(&p.footer_left(), ""));

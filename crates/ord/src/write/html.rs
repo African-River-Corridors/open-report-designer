@@ -117,7 +117,9 @@ fn cover(p: &Prepared, h: &mut String) {
     for (label, value) in p.cover_control() {
         let _ = writeln!(h, "<div><dt>{}</dt><dd>{}</dd></div>", esc(label), esc(&value));
     }
-    h.push_str("</dl>\n</header>\n");
+    h.push_str("</dl>\n");
+    cover_notice(p, h);
+    h.push_str("</header>\n");
 }
 
 /// The photo cover (spec 0002 §4), in the same order as the PDF and Word writers.
@@ -178,7 +180,17 @@ fn photo_cover(p: &Prepared, h: &mut String) {
         }
         h.push_str("</tbody>\n</table>\n");
     }
+    cover_notice(p, h);
     h.push_str("</div>\n</header>\n");
+}
+
+/// The cover notice (`cover_notice`): small print at the foot of the cover, and nowhere else.
+fn cover_notice(p: &Prepared, h: &mut String) {
+    if let Some(n) = &p.doc.cover_notice {
+        h.push_str("<div class=\"cover-notice\">\n");
+        md_blocks(n, h);
+        h.push_str("</div>\n");
+    }
 }
 
 fn control(p: &Prepared, h: &mut String) {
@@ -623,6 +635,14 @@ figcaption {{ font-weight: 700; text-align: left; margin-top: 0.4em; }}
         if let Some(size) = t.headless_size_pt {
             let _ = writeln!(x, "table.headless {{ font-size: {size}pt; }}");
         }
+    }
+    if p.doc.cover_notice.is_some() {
+        let ph = crate::render::PHOTO;
+        let _ = writeln!(
+            x,
+            ".cover .cover-notice {{ margin-top: {}mm; font-size: {}pt; line-height: {}; opacity: 0.85; }}\n.cover .cover-notice p {{ margin: 0 0 {}mm; }}",
+            ph.notice_above_mm, ph.notice_pt, ph.notice_lh, ph.notice_par_gap_mm
+        );
     }
     if t.cover && t.cover_layout == CoverLayout::Photo {
         let _ = write!(

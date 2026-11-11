@@ -174,6 +174,10 @@ fn markup_with_band(p: &Prepared, band_mm: f64, full: bool) -> Markup {
             CoverLayout::Classic => w.cover(),
             CoverLayout::Photo => w.photo_cover(),
         }
+        if p.numbers_skip_cover() {
+            // The cover is not counted: the next page is page 1.
+            w.o.push_str("#counter(page).update(1)\n");
+        }
     } else {
         let _ = writeln!(
             w.o,
@@ -325,11 +329,12 @@ impl W<'_> {
         };
         // The foot is a grid, so the left text may wrap without pushing the page number off its line.
         let middle = p.footer_middle().map(|m| esc(&m)).unwrap_or_default();
-        let page_of = format!(
-            "#context [{}#str(here().page()){}#str(counter(page).final().first())]",
-            esc(pg),
-            esc(of)
-        );
+        // With `count_cover: false` the page counter starts again at 1 after the cover (below, after the cover), so
+        // the foot prints the counter, not the page's place in the file. The contents list prints the same
+        // counter, so it agrees.
+        let here = if p.numbers_skip_cover() { "counter(page).get().first()" } else { "here().page()" };
+        let page_of =
+            format!("#context [{}#str({here}){}#str(counter(page).final().first())]", esc(pg), esc(of));
         let foot_line = if p.grid_foot() {
             format!(
                 "#grid(columns: (40%, 20%, 40%), align: (left, center, right), [{foot}], [{middle}], [{page_of}])"
@@ -407,7 +412,30 @@ impl W<'_> {
                 esc(v)
             );
         }
-        self.o.push_str(")]\n]\n\n");
+        self.o.push_str(")]\n");
+        // The control block is already at the foot of the page: the notice follows it.
+        let ink = rgb(t.ink_2);
+        self.cover_notice(&ink, false);
+        self.o.push_str("]\n\n");
+    }
+
+    /// The cover notice (`cover_notice`): small print at the foot of the cover, at least
+    /// `PHOTO.notice_above_mm` under what comes before it. With `push`, a flexible space above it takes it to
+    /// the foot of the page; in the photo cover's measure (a page as tall as its content) that space is
+    /// nothing, so the photograph leaves room for the notice and the cover stays one page.
+    fn cover_notice(&mut self, ink: &str, push: bool) {
+        let Some(n) = &self.p.doc.cover_notice else { return };
+        let _ = writeln!(
+            self.o,
+            "#v({}mm)\n{}#block(width: 100%, above: 0mm, below: 0mm)[#set text(size: {}pt, fill: {ink})\n{}\n#set par(spacing: {}mm, justify: false)",
+            num(PHOTO.notice_above_mm),
+            if push { "#v(1fr)\n" } else { "" },
+            num(PHOTO.notice_pt),
+            line_box(PHOTO.notice_lh),
+            num(PHOTO.notice_par_gap_mm),
+        );
+        self.md_blocks(n);
+        self.o.push_str("]\n");
     }
 
     /// The photo cover (spec 0002 §4): a photograph across the head of the page, then on the cover paper the
@@ -597,6 +625,8 @@ impl W<'_> {
             }
             self.o.push_str(")]\n");
         }
+        let ink = rgb(t.cover_ink.over(t.paper, 0.85));
+        self.cover_notice(&ink, true);
     }
 
     fn control(&mut self) {

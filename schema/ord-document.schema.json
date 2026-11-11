@@ -95,6 +95,20 @@
         "null"
       ]
     },
+    "cover_notice": {
+      "description": "(0.2) Small print at the foot of the cover page (Markdown), such as a disclaimer. Unlike `notice`, it\nis printed on the cover only: never in the running foot or on any other page.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "count_cover": {
+      "description": "(0.2) Whether the cover page counts in the page numbers. Default true. With false, and a cover, the\npage after the cover is page 1 and the total leaves the cover out: a cover and eight pages read\n\"Page 1 of 8\" to \"Page 8 of 8\". The cover has no page number either way. No effect without a cover.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "body": {
       "description": "The main matter.",
       "type": "array",

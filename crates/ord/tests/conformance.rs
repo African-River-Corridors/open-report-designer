@@ -60,6 +60,9 @@ fn expected_in(p: &Prepared, pdf: bool) -> Vec<String> {
                 out.push(value);
             }
         }
+        if let Some(n) = &d.cover_notice {
+            md(n, &mut out);
+        }
     } else if p.template.cover {
         out.push(d.control.class_name.clone());
         out.push(d.title.clone());
@@ -72,6 +75,9 @@ fn expected_in(p: &Prepared, pdf: bool) -> Vec<String> {
         for (label, value) in p.cover_control() {
             out.push(label.to_string());
             out.push(value);
+        }
+        if let Some(n) = &d.cover_notice {
+            md(n, &mut out);
         }
     } else {
         out.push(d.title.clone());
@@ -361,6 +367,33 @@ fn a_document_without_a_cover_or_contents_conforms_too() {
     assert_eq!(html_texts(&render(&d, &a, Format::Html)), want);
     assert_eq!(docx_texts(&render(&d, &a, Format::Docx)), want);
     assert!(pdf_missing(&p, &render(&d, &a, Format::Pdf)).is_empty());
+}
+
+/// Small print long enough to fill the foot of a cover: three paragraphs, about 150 words.
+pub const COVER_NOTICE: &str = "This document is shared as is, for discussion. It is confidential and is for the \
+named recipients only; do not copy or forward it without the written consent of the Example Company.\n\n\
+It is not an offer, or an invitation to make an offer, to sell or buy any security or to lend, and no part of \
+it forms the basis of any contract. The Example Company and its advisers make no representation or warranty, \
+express or implied, as to the accuracy or completeness of this document, and accept no liability for any \
+loss arising from its use.\n\n\
+Each recipient must carry out its own investigation and due diligence and take its own advice. The document \
+contains forward-looking statements, including cost estimates, volumes and schedules. They rest on \
+assumptions, are not guarantees, and actual results may differ materially.";
+
+#[test]
+fn a_cover_notice_conforms_on_both_covers() {
+    for path in ["examples/screening-report.json", "examples/photo-cover-report.json"] {
+        let (mut d, a) = load(&repo().join(path));
+        d.ord = "0.2".into();
+        d.cover_notice = Some(COVER_NOTICE.into());
+        let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+        let want = expected(&p);
+        assert!(want.iter().any(|t| t.starts_with("Eachrecipient")), "{path}: the notice is expected");
+        assert_eq!(html_texts(&render(&d, &a, Format::Html)), want, "{path}: HTML");
+        assert_eq!(docx_texts(&render(&d, &a, Format::Docx)), want, "{path}: Word");
+        let missing = pdf_missing(&p, &render(&d, &a, Format::Pdf));
+        assert!(missing.is_empty(), "{path}: the PDF does not hold, in order: {missing:#?}");
+    }
 }
 
 /// The suite can fail: one changed text in any output is caught.
