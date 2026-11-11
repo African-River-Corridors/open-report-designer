@@ -77,6 +77,8 @@ pub struct Template {
     pub data_ground: Colour,
     /// The width of the ink rule on the left of a data box, points.
     pub data_rule_pt: f32,
+    /// The colour of the rule on the left of a data box. None is the ink. Override (0.2): `data_rule`.
+    pub data_rule: Option<Colour>,
     /// The heading font family. Override (0.2): `heading_font`.
     pub heading_font: Cow<'static, str>,
     /// The font family of text, tables and numbers. Override (0.2): `body_font`.
@@ -151,6 +153,7 @@ pub const DEFAULT: Template = Template {
     accent_ground: Colour([0xe8, 0xdc, 0xbd]),
     data_ground: Colour([0xf8, 0xf2, 0xe3]),
     data_rule_pt: 1.5,
+    data_rule: None,
     heading_font: Cow::Borrowed(DEFAULT_HEADING_FONT),
     body_font: Cow::Borrowed(DEFAULT_BODY_FONT),
     body_size_pt: 10.0,
@@ -194,6 +197,13 @@ pub const DEFAULT: Template = Template {
 /// The default families.
 pub const DEFAULT_HEADING_FONT: &str = "Libre Caslon Text";
 pub const DEFAULT_BODY_FONT: &str = "Public Sans";
+
+impl Template {
+    /// The colour of the rule on the left of a data box: `data_rule`, else the ink.
+    pub fn data_rule_colour(&self) -> Colour {
+        self.data_rule.unwrap_or(self.ink)
+    }
+}
 
 impl Default for Template {
     fn default() -> Self {
@@ -253,6 +263,12 @@ impl Template {
         }
         if let Some(c) = colour("table_stripe", &o.table_stripe) {
             t.table_stripe = Some(c);
+        }
+        if let Some(c) = colour("data_ground", &o.data_ground) {
+            t.data_ground = c;
+        }
+        if let Some(c) = colour("data_rule", &o.data_rule) {
+            t.data_rule = Some(c);
         }
         if let Some(v) = o.cover_image_fill {
             t.cover_image_fill = v;

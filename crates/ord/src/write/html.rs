@@ -44,6 +44,7 @@ pub fn write(p: &Prepared) -> String {
         match p.template.cover_layout {
             CoverLayout::Classic => cover(p, &mut h),
             CoverLayout::Photo => photo_cover(p, &mut h),
+            CoverLayout::Head => head(p, &mut h),
         }
     } else {
         let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
@@ -118,6 +119,29 @@ fn cover(p: &Prepared, h: &mut String) {
         let _ = writeln!(h, "<div><dt>{}</dt><dd>{}</dd></div>", esc(label), esc(&value));
     }
     h.push_str("</dl>\n</header>\n");
+}
+
+/// The document head (spec 0002 §4.1), in the same order as the PDF and Word writers.
+fn head(p: &Prepared, h: &mut String) {
+    let d = &p.doc;
+    h.push_str("<header class=\"doc-head\">\n");
+    if let Some(o) = &d.organisation {
+        let _ = writeln!(h, "<p class=\"kicker\">{}</p>", esc(o));
+    }
+    let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
+    if let Some(s) = &d.subtitle {
+        let _ = writeln!(h, "<p class=\"meta\">{}</p>", esc(s));
+    }
+    if let Some(n) = &d.notice {
+        let _ = writeln!(h, "<p class=\"meta notice\">{}</p>", esc(n));
+    }
+    h.push_str("<hr class=\"head-rule\"/>\n");
+    if let Some(s) = &d.summary {
+        h.push_str("<div class=\"summary\">\n");
+        md_blocks(s, h);
+        h.push_str("</div>\n");
+    }
+    h.push_str("</header>\n");
 }
 
 /// The photo cover (spec 0002 §4), in the same order as the PDF and Word writers.
@@ -623,6 +647,35 @@ figcaption {{ font-weight: 700; text-align: left; margin-top: 0.4em; }}
         if let Some(size) = t.headless_size_pt {
             let _ = writeln!(x, "table.headless {{ font-size: {size}pt; }}");
         }
+    }
+    if let Some(c) = t.data_rule {
+        let _ = writeln!(x, ".data-box {{ border-left-color: {c}; }}");
+    }
+    if t.cover && t.cover_layout == CoverLayout::Head {
+        let hd = crate::render::HEAD;
+        let _ = write!(
+            x,
+            r#".doc-head {{ margin: 0 0 {after}mm; }}
+.doc-head .kicker {{ color: {caccent}; font-size: {kpt}pt; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; margin: 0 0 {kafter}mm; }}
+.doc-head .doc-title {{ color: {hink}; font-weight: {hw}; font-size: {title}pt; line-height: {tlh}; margin: 0 0 {tafter}mm; }}
+.doc-head .meta {{ color: var(--ink-2); font-size: {mpt}pt; margin: 0 0 1mm; }}
+.doc-head .notice {{ color: var(--ink); font-weight: 700; }}
+.doc-head .head-rule {{ border: none; height: {rpt}pt; background: {caccent}; margin: {rabove}mm 0 {rbelow}mm; }}
+"#,
+            after = hd.after_mm,
+            caccent = t.cover_accent,
+            kpt = hd.kicker_pt,
+            kafter = hd.kicker_after_mm,
+            hink = t.heading_ink,
+            hw = if t.heading_bold { 700 } else { 400 },
+            title = t.cover_title_pt,
+            tlh = hd.title_lh,
+            tafter = hd.title_after_mm,
+            mpt = hd.meta_pt,
+            rpt = hd.rule_pt,
+            rabove = hd.rule_above_mm,
+            rbelow = hd.rule_below_mm,
+        );
     }
     if t.cover && t.cover_layout == CoverLayout::Photo {
         let _ = write!(

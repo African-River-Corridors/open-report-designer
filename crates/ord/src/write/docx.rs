@@ -497,6 +497,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             match p.template.cover_layout {
                 CoverLayout::Classic => self.cover(),
                 CoverLayout::Photo => self.photo_cover(),
+                CoverLayout::Head => self.head(),
             }
         } else {
             let t = run(&d.title, "");
@@ -521,6 +522,26 @@ impl<'a, 'p> Writer<'a, 'p> {
         let mut x = String::from(DECL);
         let _ = write!(x, "<w:document {NS_DOC}><w:body>{body}{}</w:body></w:document>", self.sect_pr(true));
         x
+    }
+
+    /// The document head (spec 0002 §4.1): paragraphs at the top of the first body page, in the `Head*`
+    /// styles, which take their sizes from `render::HEAD` as the PDF writer does. No section of its own.
+    fn head(&mut self) {
+        let d = &self.p.doc;
+        if let Some(o) = &d.organisation {
+            self.para(&PPr::style("HeadKicker"), &run(o, ""));
+        }
+        self.para(&PPr::style("HeadTitle"), &run(&d.title, ""));
+        if let Some(s) = &d.subtitle {
+            self.para(&PPr::style("HeadMeta"), &run(s, ""));
+        }
+        if let Some(n) = &d.notice {
+            self.para(&PPr::style("HeadNotice"), &run(n, ""));
+        }
+        self.para(&PPr::style("HeadRule"), "");
+        if let Some(s) = &d.summary {
+            self.md_blocks(s, Ctx { style: "Summary", depth: 0 });
+        }
     }
 
     fn cover(&mut self) {
@@ -1101,7 +1122,7 @@ impl<'a, 'p> Writer<'a, 'p> {
              <w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>\
              <w:tblCellMar><w:top w:w=\"57\" w:type=\"dxa\"/><w:left w:w=\"170\" w:type=\"dxa\"/><w:bottom w:w=\"57\" w:type=\"dxa\"/><w:right w:w=\"170\" w:type=\"dxa\"/></w:tblCellMar></w:tblPr>\
              <w:tblGrid><w:gridCol w:w=\"{c1}\"/><w:gridCol w:w=\"{c2}\"/></w:tblGrid>",
-            parts::hex(t.ink)
+            parts::hex(t.data_rule_colour())
         );
         let title = self.bookmarked(&d.anchor, run(&d.title, ""));
         let _ = write!(

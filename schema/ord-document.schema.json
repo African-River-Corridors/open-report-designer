@@ -779,7 +779,7 @@
           ]
         },
         "cover_layout": {
-          "description": "\"classic\" (the default) or \"photo\": a photograph band, the summary and the logo strip on cards, and\na control block.",
+          "description": "\"classic\" (the default), \"photo\" (a photograph band, the summary and the logo strip on cards, and a\ncontrol block) or \"head\" (no cover page: the organisation, title, subtitle, notice and summary head\npage 1, and the body follows on the same page).",
           "anyOf": [
             {
               "$ref": "#/$defs/CoverLayout"
@@ -1060,16 +1060,38 @@
             "null"
           ],
           "format": "float"
+        },
+        "data_ground": {
+          "description": "Colours as \"#rrggbb\": the ground of a data box, and the rule on its left. Default a light ground and\nthe ink.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data_rule": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "additionalProperties": false
     },
     "CoverLayout": {
       "description": "The cover's layout (0.2).",
-      "type": "string",
-      "enum": [
-        "classic",
-        "photo"
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "classic",
+            "photo"
+          ]
+        },
+        {
+          "description": "No cover page: a document head opens page 1, then the body follows on the same page.",
+          "type": "string",
+          "const": "head"
+        }
       ]
     },
     "HeadingNumbers": {

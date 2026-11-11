@@ -448,3 +448,85 @@ fn the_logo_strip_pads_its_foot_with_paragraph_spacing_not_a_cell_margin() {
         assert_eq!(strip.matches(&tail).count(), n, "each cell's last paragraph carries the pad");
     }
 }
+
+// --- The document head (cover_layout "head", spec 0002 §4.1) --------------------------------------------
+
+fn briefing() -> (ord::Document, ord::Assets) {
+    load(&repo().join("examples/briefing-note.json"))
+}
+
+#[test]
+fn the_briefing_note_example_raises_no_finding() {
+    let (d, a) = briefing();
+    assert_eq!(ord::check(&d, &a, &ord::builtin_register()), Vec::<ord::Finding>::new());
+}
+
+#[test]
+fn a_document_head_refuses_a_photograph_logos_or_control_rows() {
+    let mut v = v02(serde_json::json!([prose("Body.")]));
+    v["template"] = serde_json::json!({ "cover_layout": "head" });
+    v["cover_image"] = serde_json::json!({ "asset": "p", "alt": "A photograph" });
+    v["cover_logos"] = serde_json::json!([{ "asset": "p", "name": "Mark" }]);
+    v["cover_details"] = serde_json::json!([{ "label": "Status", "value": "Draft" }]);
+    v["assets"] = serde_json::json!({ "p": { "media_type": "image/png" } });
+    let supplied = std::collections::BTreeMap::from([("p".to_string(), png())]);
+    let (assets, _) = ord::assets::collect(&doc(&v), &supplied);
+    let got = codes_of(&v, &assets);
+    for path in ["/cover_image", "/cover_logos", "/cover_details"] {
+        assert!(got.contains(&("ORD023", path.to_string())), "{path} not refused: {got:?}");
+    }
+    // The same document on a photo cover has none of them, and an empty control list is not refused.
+    v["template"]["cover_layout"] = "photo".into();
+    assert!(codes_of(&v, &assets).iter().all(|(c, _)| *c != "ORD023"));
+    v["template"]["cover_layout"] = "head".into();
+    v.as_object_mut().unwrap().remove("cover_image");
+    v.as_object_mut().unwrap().remove("cover_logos");
+    v["cover_details"] = serde_json::json!([]);
+    assert!(codes_of(&v, &assets).iter().all(|(c, _)| *c != "ORD023"));
+}
+
+#[test]
+fn a_document_head_opens_page_one_with_no_cover_page() {
+    let (d, a) = briefing();
+    assert!(ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).is_ok());
+    // Word: the head is paragraphs of the first section, not a section of its own, and its styles are
+    // written; a photo cover's are not.
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    let styles = docx_part(&docx, "word/styles.xml").unwrap();
+    assert_eq!(body.matches("<w:sectPr").count(), 1, "the head must not open a section of its own");
+    for s in ["HeadKicker", "HeadTitle", "HeadMeta", "HeadRule"] {
+        assert!(body.contains(&format!("w:val=\"{s}\"")), "{s} not used");
+        assert!(styles.contains(&format!("w:styleId=\"{s}\"")), "{s} not defined");
+    }
+    assert!(!styles.contains("w:styleId=\"CoverTitle\""));
+    // HTML: a document head, not a cover.
+    let html = String::from_utf8(ord::render(&d, &a, &ord::builtin_register(), Format::Html).unwrap().bytes)
+        .unwrap();
+    assert!(html.contains("<header class=\"doc-head\">") && !html.contains("class=\"cover"));
+}
+
+#[test]
+fn the_head_styles_are_not_written_for_other_covers() {
+    let (d, a) = photo();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let styles = docx_part(&docx, "word/styles.xml").unwrap();
+    assert!(!styles.contains("HeadTitle"));
+}
+
+#[test]
+fn the_data_box_ground_and_rule_reach_every_writer() {
+    let (d, a) = briefing();
+    let docx = ord::render(&d, &a, &ord::builtin_register(), Format::Docx).unwrap().bytes;
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    assert!(body.contains("w:fill=\"F7F4EE\""), "no data ground in Word");
+    assert!(body.contains("w:color=\"B8862E\""), "no data rule colour in Word");
+    let html = String::from_utf8(ord::render(&d, &a, &ord::builtin_register(), Format::Html).unwrap().bytes)
+        .unwrap();
+    assert!(html.contains("--data-ground: #f7f4ee"));
+    assert!(html.contains(".data-box { border-left-color: #b8862e; }"));
+    // Unset, the rule is the ink, as before.
+    let (d, a) = example();
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    assert_eq!(p.template.data_rule_colour(), p.template.ink);
+}

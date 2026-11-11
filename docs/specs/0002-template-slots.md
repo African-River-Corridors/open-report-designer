@@ -69,11 +69,28 @@ With `template.cover_layout: "photo"`, the cover is, top to bottom, on the cover
 The class name is not printed. Each writer draws the same thing: Typst blocks for the PDF; anchored pictures,
 one-cell shaded tables and the cover section's own footer for Word; HTML elements for HTML.
 
+### 4.1 The document head
+
+With `template.cover_layout: "head"`, there is no cover page. Page 1 opens with a document head, and the body
+follows on the same page. Top to bottom:
+
+1. the organisation, if any, as a small kicker in capitals in the cover accent;
+2. the title in the heading font, `cover_title_pt` high, in the heading ink;
+3. the subtitle and the notice, each a short line (the notice in bold);
+4. a full-width rule of the cover accent;
+5. the summary, as body text.
+
+It suits a short note read at a desk: a briefing, a memo, a one-page schedule. There is nowhere to print a
+cover photograph, logos or a control block, so a document head that names one is refused (`ORD023`); an empty
+`cover_details` list is fine. The running foot is the body's, from page 1. The head's measurements are one
+table in the core, `render::HEAD`, read by every writer; Word writes the head as paragraphs of the body section
+in `Head*` styles, written only when the document uses the head.
+
 ## 5. The template (additions)
 
 | Value | Default | Meaning |
 |---|---|---|
-| `cover_layout` | `classic` | `classic` (spec 0001) or `photo` (§4). |
+| `cover_layout` | `classic` | `classic` (spec 0001), `photo` (§4) or `head` (§4.1). |
 | `cover_image_height_mm` | 75 | 10 to 200. |
 | `cover_ink`, `cover_accent`, `card_ground` | ink, ink, white | The photo cover's text, accent and card ground. |
 | `heading_ink` | ink | Headings. |
@@ -94,7 +111,7 @@ one-cell shaded tables and the cover section's own footer for Word; HTML element
 | `revision_prefix` | `Rev ` | The word before the revision in the running head and on the cover foot. |
 | `cover_image_fill` | false | The photograph takes the height the cover's content leaves, from `cover_image_min_mm` (38) to `cover_image_height_mm`, so the content sits at the foot. The core measures the content once with the PDF typesetter; every writer uses that height. |
 | `cover_image_rule_pt` | none | A rule of the accent along the foot of the photograph; it replaces the short rule above the title. |
-| `cover_title_pt` | 25 | The photo cover's title size. |
+| `cover_title_pt` | 25 | The title size of the photo cover and of the document head. |
 | `cover_panel_ground` | none | The ground of the photo cover's control block. |
 | `line_height` | none | Baseline to baseline, in multiples of the size. Every line box is that tall, half the leading above and half below (as CSS and Word's "at least" spacing), so a one-line table row is as tall in every writer. Headings stay single. |
 | `paragraph_spacing_pt` | none | The space between paragraphs. |
@@ -102,6 +119,7 @@ one-cell shaded tables and the cover section's own footer for Word; HTML element
 | `table_size_pt`, `table_padding_mm` | none | Table text size; cell padding `[top and bottom, left and right]`. |
 | `headless_size_pt`, `headless_padding_mm` | none | The same, for a table with no header row (its first column is in `ink_2`). |
 | `table_stripe` | none | The ground of every second body row of a table with a header row. |
+| `data_ground`, `data_rule` | light ground, ink | The ground of a data box and the colour of the rule on its left. |
 
 The photo cover's own measurements (title line height, card padding and gaps, logo sizes, the control
 block's padding and sizes, the foot size) are one table in the core, `render::PHOTO`, read by every writer.
@@ -129,6 +147,7 @@ numbers in every writer.
 | `ORD014` | error | (also) The cover image has empty alt text. |
 | `ORD020` | error | (also) A column width is outside `0 < w ≤ 1`, or the widths add up to more than 1. |
 | `ORD022` | error | A font family is neither bundled nor given by a font asset (PDF). |
+| `ORD023` | error | A document head (`cover_layout: "head"`) names a cover image, cover logos or cover rows. |
 
 ## 8. Word as a master
 

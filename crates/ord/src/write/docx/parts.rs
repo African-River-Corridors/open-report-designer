@@ -530,7 +530,80 @@ pub fn styles(p: &Prepared) -> String {
     let title_pt = f64::from(t.cover_title_pt);
     let panel_line_ink = hex(t.cover_ink.over(t.cover_panel_ground.unwrap_or(t.paper), 0.18));
     let _ = &panel_line_ink;
+    let hd = crate::render::HEAD;
+    let hink_head = hex(t.heading_ink);
     let extra: Vec<(String, String, &str, &str, String, String)> = vec![
+        (
+            "HeadKicker".into(),
+            "Head Kicker".into(),
+            "Normal",
+            "HeadTitle",
+            format!(
+                "<w:keepNext/><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                mm(hd.kicker_after_mm),
+                exact(hd.kicker_pt, 1.3)
+            ),
+            format!(
+                "<w:b/><w:bCs/><w:caps/><w:color w:val=\"{caccent}\"/><w:spacing w:val=\"{}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                (hd.kicker_pt * 0.16 * 20.0).round() as u32,
+                hp(hd.kicker_pt),
+                hp(hd.kicker_pt)
+            ),
+        ),
+        (
+            "HeadTitle".into(),
+            "Head Title".into(),
+            "Normal",
+            "HeadMeta",
+            format!(
+                "<w:keepNext/><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"atLeast\"/>",
+                mm(hd.title_after_mm),
+                exact(title_pt, hd.title_lh)
+            ),
+            format!(
+                "{head}{hbold}<w:color w:val=\"{hink_head}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(title_pt),
+                hp(title_pt)
+            ),
+        ),
+        (
+            "HeadMeta".into(),
+            "Head Meta".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:keepNext/><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"atLeast\"/>",
+                mm(1.0),
+                exact(hd.meta_pt, hd.meta_lh)
+            ),
+            format!(
+                "<w:color w:val=\"{ink2}\"/><w:sz w:val=\"{}\"/><w:szCs w:val=\"{}\"/>",
+                hp(hd.meta_pt),
+                hp(hd.meta_pt)
+            ),
+        ),
+        (
+            "HeadNotice".into(),
+            "Head Notice".into(),
+            "HeadMeta",
+            "Normal",
+            String::new(),
+            "<w:b/><w:bCs/><w:color w:val=\"{ink}\"/>".replace("{ink}", &ink),
+        ),
+        (
+            "HeadRule".into(),
+            "Head Rule".into(),
+            "Normal",
+            "Normal",
+            format!(
+                "<w:pBdr><w:bottom w:val=\"single\" w:sz=\"{}\" w:space=\"0\" w:color=\"{caccent}\"/></w:pBdr>\
+                 <w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"20\" w:lineRule=\"exact\"/>",
+                (hd.rule_pt * 8.0).round() as u32,
+                mm(hd.rule_above_mm),
+                mm(hd.rule_below_mm)
+            ),
+            "<w:sz w:val=\"2\"/><w:szCs w:val=\"2\"/>".into(),
+        ),
         (
             "TableHead".into(),
             "Table Head".into(),
@@ -696,6 +769,9 @@ pub fn styles(p: &Prepared) -> String {
         let used = match style.0.as_str() {
             "TableHead" => t.table_header_ink != t.ink,
             "TableLabel" | "TablePlain" => crate::resolve::has_headless(&p.doc),
+            "HeadKicker" | "HeadTitle" | "HeadMeta" | "HeadNotice" | "HeadRule" => {
+                t.cover && t.cover_layout == crate::model::CoverLayout::Head
+            }
             _ => t.cover && t.cover_layout == crate::model::CoverLayout::Photo,
         };
         if used {
