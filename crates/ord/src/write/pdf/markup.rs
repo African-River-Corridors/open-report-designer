@@ -173,6 +173,7 @@ fn markup_with_band(p: &Prepared, band_mm: f64, full: bool) -> Markup {
         match p.template.cover_layout {
             CoverLayout::Classic => w.cover(),
             CoverLayout::Photo => w.photo_cover(),
+            CoverLayout::Head => w.head(),
         }
     } else {
         let _ = writeln!(
@@ -408,6 +409,71 @@ impl W<'_> {
             );
         }
         self.o.push_str(")]\n]\n\n");
+    }
+
+    /// The document head (spec 0002 §4.1): no page of its own. The organisation as a kicker, the title, the
+    /// subtitle and notice, a full-width accent rule and the summary open page 1; the body follows. Every
+    /// measurement is `HEAD`'s.
+    fn head(&mut self) {
+        let p = self.p;
+        let d = &p.doc;
+        let t = &p.template;
+        let h = crate::render::HEAD;
+        let accent = rgb(t.cover_accent);
+        self.o.push_str("#block(width: 100%, above: 0mm, below: 0mm)[\n");
+        if let Some(org) = &d.organisation {
+            let _ = writeln!(
+                self.o,
+                "#block(above: 0mm, below: {}mm)[{}\n#text(size: {}pt, tracking: 0.16em, weight: \"bold\", fill: {accent})[#upper({})]]",
+                num(h.kicker_after_mm),
+                line_box(1.3),
+                num(h.kicker_pt),
+                lit(org)
+            );
+        }
+        let weight = if t.heading_bold { "bold" } else { "regular" };
+        let _ = writeln!(
+            self.o,
+            "#block(above: 0mm, below: {}mm)[{}\n#text(font: {}, weight: \"{weight}\", size: {}pt, fill: {})[{}]]",
+            num(h.title_after_mm),
+            line_box(h.title_lh),
+            lit(&t.heading_font),
+            num(t.cover_title_pt.into()),
+            rgb(t.heading_ink),
+            esc(&d.title)
+        );
+        if let Some(s) = &d.subtitle {
+            let _ = writeln!(
+                self.o,
+                "#block(above: 0mm, below: 1mm)[{}\n#text(size: {}pt, fill: {})[{}]]",
+                line_box(h.meta_lh),
+                num(h.meta_pt),
+                rgb(t.ink_2),
+                esc(s)
+            );
+        }
+        if let Some(n) = &d.notice {
+            let _ = writeln!(
+                self.o,
+                "#block(above: 0mm, below: 1mm)[{}\n#text(size: {}pt, weight: \"bold\")[{}]]",
+                line_box(h.meta_lh),
+                num(h.meta_pt),
+                esc(n)
+            );
+        }
+        let _ = writeln!(
+            self.o,
+            "#block(width: 100%, height: {}pt, fill: {accent}, above: {}mm, below: {}mm)[]",
+            num(h.rule_pt),
+            num(h.rule_above_mm),
+            num(h.rule_below_mm)
+        );
+        if let Some(s) = &d.summary {
+            self.o.push_str("#block(width: 100%, above: 0mm, below: 0mm)[\n");
+            self.md_blocks(s);
+            self.o.push_str("]\n");
+        }
+        let _ = writeln!(self.o, "]\n#v({}mm)\n", num(h.after_mm));
     }
 
     /// The photo cover (spec 0002 §4): a photograph across the head of the page, then on the cover paper the
@@ -672,7 +738,7 @@ impl W<'_> {
                         "#block(width: 100%, breakable: false, fill: {}, stroke: (left: {}pt + {}), inset: (x: 1em, y: 0.75em), above: 1.5em, below: 1.5em)[",
                         rgb(t.data_ground),
                         num(t.data_rule_pt.into()),
-                        rgb(t.ink)
+                        rgb(t.data_rule_colour())
                     );
                     let _ = writeln!(
                         self.o,
@@ -689,7 +755,15 @@ impl W<'_> {
                         self.o.push_str(")\n");
                     }
                     if let Some(n) = &db.notes {
-                        self.notes(n);
+                        if db.items.is_empty() {
+                            // With no items the notes are the box's whole text, not a note under a table:
+                            // the ink at the text size, as the HTML and Word writers print them.
+                            self.o.push_str("#block(above: 0.6em)[\n");
+                            self.md_blocks(n);
+                            self.o.push_str("]\n");
+                        } else {
+                            self.notes(n);
+                        }
                     }
                     let _ = writeln!(self.o, "] {}\n", label(&db.anchor));
                 }
@@ -1009,5 +1083,22 @@ mod tests {
         assert_eq!(iso_date("2026-10-22"), Some((2026, 10, 22)));
         assert_eq!(iso_date("22/10/2026"), None);
         assert_eq!(iso_date("2026-13-01"), None);
+    }
+
+    /// The document head is drawn on page 1 with no cover page, and a data box takes its ground and rule.
+    #[test]
+    fn the_head_has_no_page_of_its_own_and_the_box_takes_its_colours() {
+        let doc = crate::parse(include_str!("../../../../../examples/briefing-note.json")).unwrap();
+        let (assets, _) = crate::assets::collect(&doc, &Default::default());
+        let (p, _) = crate::render::prepare(&doc, &assets, &crate::register::builtin_register()).unwrap();
+        let src = markup(&p).source;
+        let body = &src[src.find("EXAMPLE WATERWAYS").or_else(|| src.find("Example Waterways")).unwrap()..];
+        assert!(!src.contains("#page(fill"), "a head must not draw a cover page");
+        assert!(body.contains("Bank works at the upper reach"));
+        assert!(src.contains("stroke: (left: 1.5pt + rgb(\"#b8862e\"))"));
+        assert!(src.contains("fill: rgb(\"#f7f4ee\")"));
+        // A box with no items prints its notes as its text, in the ink, not as grey notes.
+        let boxed = &src[src.find("What I need from you").unwrap()..src.find("Choose a contractor").unwrap()];
+        assert!(!boxed.contains("size: 0.9em"), "{boxed}");
     }
 }

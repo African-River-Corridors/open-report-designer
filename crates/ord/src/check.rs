@@ -16,7 +16,35 @@ pub fn check(doc: &Document, assets: &Assets, register: &Register) -> Vec<Findin
     out.extend(structural);
     images(doc, assets, &mut out);
     cover(doc, assets, &mut out);
+    head(doc, &mut out);
     out
+}
+
+/// A document head has no photograph, logo strip or control block (ORD023): a field that names one would be
+/// dropped without a word, so it is refused instead.
+fn head(doc: &Document, out: &mut Vec<Finding>) {
+    let Some(t) = &doc.template else { return };
+    if t.cover_layout != Some(crate::model::CoverLayout::Head) || t.cover == Some(false) {
+        return;
+    }
+    let mut unused = Vec::new();
+    if doc.cover_image.is_some() {
+        unused.push("/cover_image");
+    }
+    if !doc.cover_logos.is_empty() {
+        unused.push("/cover_logos");
+    }
+    if doc.cover_details.as_ref().is_some_and(|d| !d.is_empty()) {
+        unused.push("/cover_details");
+    }
+    for path in unused {
+        out.push(Finding::error(
+            "ORD023",
+            path,
+            "the document head (cover_layout \"head\") prints no photograph, logos or control block; remove \
+             this field or choose another cover layout",
+        ));
+    }
 }
 
 /// A "0.1" document may not use a field added in "0.2" (ORD001), so that it still renders the same on a

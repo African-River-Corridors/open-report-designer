@@ -1,0 +1,62 @@
+{
+  "ord": "0.2",
+  "class": "report",
+  "title": "Bank works at the upper reach: two quotes compared",
+  "subtitle": "Briefing note · 11 November 2026 · Draft",
+  "organisation": "Example Waterways",
+  "language": "en-GB",
+  "control": {
+    "revision": "A",
+    "date": "2026-11-11",
+    "status": "draft",
+    "sensitivity": "internal"
+  },
+  "summary": "The steering group asked for a second quote for the bank works. It has come in. This note compares the two and asks for one decision.",
+  "contents": false,
+  "footer": "Bank works at the upper reach",
+  "body": [
+    {
+      "type": "data_box",
+      "title": "What I need from you",
+      "items": [],
+      "notes": "1. **Choose a contractor** for the bank works, by 18 November 2026.\n2. **Agree the start date** of 1 December, or name another."
+    },
+    {
+      "type": "section",
+      "title": "The two quotes",
+      "body": [
+        { "type": "prose", "markdown": "Both quotes cover the same 400 m of bank. They differ on stone supply." },
+        {
+          "type": "table",
+          "header": true,
+          "columns": [
+            { "title": "Item" },
+            { "title": "Quote 1", "align": "right" },
+            { "title": "Quote 2", "align": "right" }
+          ],
+          "rows": [
+            ["Stone supply", "18,200", "15,900"],
+            ["Placing and trimming", "9,400", "10,100"],
+            ["Total (EUR)", "27,600", "26,000"]
+          ]
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "title": "Sources",
+      "body": [
+        { "type": "prose", "markdown": "- The first quote for the bank works, October 2026\n- The second quote for the bank works, November 2026\n- Minutes of the steering group, 14 October 2026" }
+      ]
+    }
+  ],
+  "template": {
+    "cover_layout": "head",
+    "cover_title_pt": 20,
+    "control_page": false,
+    "running_head": false,
+    "section_page_break": false,
+    "data_ground": "#f7f4ee",
+    "data_rule": "#b8862e"
+  }
+}

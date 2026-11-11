@@ -326,6 +326,37 @@ pub const PHOTO: CoverLook = CoverLook {
     slack_mm: 4.0,
 };
 
+/// The measurements of the document head (`cover_layout: "head"`), shared by every writer so the three
+/// agree: the organisation as a small kicker over the title, the title, the subtitle and notice as meta
+/// lines, then a full-width accent rule and the summary.
+#[derive(Debug, Clone, Copy)]
+pub struct HeadLook {
+    pub kicker_pt: f64,
+    pub kicker_after_mm: f64,
+    pub title_lh: f64,
+    pub title_after_mm: f64,
+    pub meta_pt: f64,
+    pub meta_lh: f64,
+    pub rule_pt: f64,
+    pub rule_above_mm: f64,
+    pub rule_below_mm: f64,
+    /// The space between the head (or its summary) and the body.
+    pub after_mm: f64,
+}
+
+pub const HEAD: HeadLook = HeadLook {
+    kicker_pt: 8.0,
+    kicker_after_mm: 2.5,
+    title_lh: 1.15,
+    title_after_mm: 2.0,
+    meta_pt: 9.0,
+    meta_lh: 1.35,
+    rule_pt: 1.2,
+    rule_above_mm: 3.0,
+    rule_below_mm: 4.0,
+    after_mm: 4.0,
+};
+
 /// The title of the document-control page, and of the control block on a photo cover.
 pub const CONTROL: &str = "Document control";
 

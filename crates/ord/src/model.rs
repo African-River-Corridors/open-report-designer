@@ -466,8 +466,9 @@ pub struct TemplateOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<bool>,
     // The fields below are added in 0.2 (spec 0002 §3). Each is optional; an unset field keeps the default.
-    /// "classic" (the default) or "photo": a photograph band, the summary and the logo strip on cards, and
-    /// a control block.
+    /// "classic" (the default), "photo" (a photograph band, the summary and the logo strip on cards, and a
+    /// control block) or "head" (no cover page: the organisation, title, subtitle, notice and summary head
+    /// page 1, and the body follows on the same page).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover_layout: Option<CoverLayout>,
     /// The height of the cover photograph, millimetres.
@@ -572,6 +573,12 @@ pub struct TemplateOverrides {
     /// The indent of each list level, millimetres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list_indent_mm: Option<f32>,
+    /// Colours as "#rrggbb": the ground of a data box, and the rule on its left. Default a light ground and
+    /// the ink.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_ground: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_rule: Option<String>,
 }
 
 /// How table columns are sized (0.2).
@@ -588,6 +595,8 @@ pub enum CoverLayout {
     #[default]
     Classic,
     Photo,
+    /// No cover page: a document head opens page 1, then the body follows on the same page.
+    Head,
 }
 
 /// How a heading's number is printed (0.2).

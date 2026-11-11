@@ -60,6 +60,14 @@ fn expected_in(p: &Prepared, pdf: bool) -> Vec<String> {
                 out.push(value);
             }
         }
+    } else if p.template.cover && p.template.cover_layout == CoverLayout::Head {
+        out.extend(d.organisation.clone());
+        out.push(d.title.clone());
+        out.extend(d.subtitle.clone());
+        out.extend(d.notice.clone());
+        if let Some(s) = &d.summary {
+            md(s, &mut out);
+        }
     } else if p.template.cover {
         out.push(d.control.class_name.clone());
         out.push(d.title.clone());
@@ -343,6 +351,11 @@ fn the_example_has_the_same_structure_and_text_in_pdf_html_and_word() {
 #[test]
 fn the_photo_cover_example_has_the_same_structure_and_text_in_pdf_html_and_word() {
     conforms(&repo().join("examples/photo-cover-report.json"));
+}
+
+#[test]
+fn the_briefing_note_example_has_the_same_structure_and_text_in_pdf_html_and_word() {
+    conforms(&repo().join("examples/briefing-note.json"));
 }
 
 #[test]
