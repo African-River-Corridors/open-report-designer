@@ -32,6 +32,7 @@ passes values, never a template language.
 | `cover_logos` | `[{ asset, name, role? }]` | A logo strip on a photo cover: each logo with a name and a role, such as the parties to a report. |
 | `cover_details` | `[{ label, value }]` | The rows of the photo cover's control block, in place of number, revision, date and status. An empty list leaves the block out. |
 | `footer` | string | The left of the running foot, in place of the organisation and the notice. |
+| `letter` | object | The furniture of a letter (§4.2): the sender, the date, the addressee, the signature and the enclosures. Only with the `letter` layout (`ORD024`). |
 
 ### 3.2 Tables (additions)
 
@@ -86,11 +87,66 @@ cover photograph, logos or a control block, so a document head that names one is
 table in the core, `render::HEAD`, read by every writer; Word writes the head as paragraphs of the body section
 in `Head*` styles, written only when the document uses the head.
 
+### 4.2 The letter
+
+With `template.cover_layout: "letter"`, there is no cover page and no control page, and the document's `letter`
+gives the letter's furniture:
+
+```json
+"letter": {
+  "sender": { "logo": "logo", "name": "Harbour Works Ltd", "lines": ["1 Quay Road", "Port Example"] },
+  "date": "25 November 2026",
+  "recipient_label": "To",
+  "recipient": ["Ms A Reader", "Example Authority"],
+  "signature": { "name": "B Writer", "title": "Director", "image": "signature" },
+  "enclosures_label": "Enclosures",
+  "enclosures": ["Schedule of works"]
+}
+```
+
+`sender.lines` and `recipient` are required, and `recipient` has at least one line (`ORD024`). `sender.name`
+defaults to `organisation`; `recipient_label` to "To"; `enclosures_label` to "Enclosures". Everything else is
+optional. The date is text the tool gives: the core reads no clock and formats no date. `sender.logo` and
+`signature.image` name image assets (`ORD011`).
+
+Page 1 opens, top to bottom:
+
+1. **The letterhead.** On the left, the sender's logo, 14 mm high (smaller if it would be wider than its
+   column, 40 % of the text width). On the right, right-aligned: the sender's name (heading font, bold, 11.5 pt,
+   heading ink); the address lines (8.6 pt, `ink_2`, line height 1.45); then the date, 1.6 mm under them.
+2. **A rule** of the cover accent across the text width, 1.5 pt, 3.2 mm under the letterhead, 5.3 mm above
+   the title.
+3. **The title** (the document's `title`): heading font, bold, 17 pt, heading ink, 4.8 mm after it.
+4. **The addressee.** The label (capitals, 7.6 pt, bold, cover accent, tracking 0.12 em), then the recipient
+   lines (body size, line height 1.5), 4.8 mm after them.
+
+Then, in this order:
+
+5. **the body**;
+6. **the signature block**, if `signature` is given, kept on one page: 9 mm above it, a space 58 mm wide and
+   16 mm high with a 0.75 pt rule of the ink along its foot (the signature image, if any, stands on the rule, at
+   most 15 mm high and 58 mm wide), then the name (bold, 9.6 pt, heading ink) and the title (8.6 pt, `ink_2`);
+7. **the enclosures**, if any, kept on one page: 4.2 mm above them, the label (as the addressee's), then a
+   numbered list (9.6 pt, line height 1.5);
+8. **the appendices**, if any, each on a new page as usual.
+
+The running foot is the body's, from page 1. A letter prints no contents list unless the document sets
+`contents: true`: the class default does not apply. There is nowhere to print a cover photograph, logos or a
+control block, so a letter that names one is refused (`ORD024`), and so are the layout with no `letter` and a
+`letter` with any other layout: nothing is dropped silently. The measurements are one table in the core,
+`render::LETTER`, read by every writer; every writer sizes the logo and the signature image by the same rule.
+
+In Word the letter is part of the one body section: the letterhead is a borderless table of two columns (the
+logo cell, then the sender's text on the right), the rule is a paragraph border, and every paragraph is in a
+`Letter*` style, each written only when the letter has the part that uses it. The signature space is a
+paragraph with a bottom border and a right indent; every paragraph of the signature block and of the
+enclosures keeps with the next but the last, so neither splits across pages.
+
 ## 5. The template (additions)
 
 | Value | Default | Meaning |
 |---|---|---|
-| `cover_layout` | `classic` | `classic` (spec 0001), `photo` (§4) or `head` (§4.1). |
+| `cover_layout` | `classic` | `classic` (spec 0001), `photo` (§4), `head` (§4.1) or `letter` (§4.2). |
 | `cover_image_height_mm` | 75 | 10 to 200. |
 | `cover_ink`, `cover_accent`, `card_ground` | ink, ink, white | The photo cover's text, accent and card ground. |
 | `heading_ink` | ink | Headings. |
@@ -140,14 +196,15 @@ numbers in every writer.
 
 | Code | Severity | Finding |
 |---|---|---|
-| `ORD001` | error | (also) A `"0.1"` document uses a 0.2 field or value. |
-| `ORD011` | error | (also) A cover image or logo names a missing, invalid or font asset; a template font is not a valid font. |
+| `ORD001` | error | (also) A `"0.1"` document uses a 0.2 field or value, such as `letter` or the `letter` layout. |
+| `ORD011` | error | (also) A cover image or logo, a letter's `sender.logo` or `signature.image`, names a missing, invalid or font asset; a template font is not a valid font. |
 | `ORD012` | error | (also) A Markdown cell holds more than one paragraph. |
 | `ORD013` | error | (also) Column groups do not span the columns. |
 | `ORD014` | error | (also) The cover image has empty alt text. |
 | `ORD020` | error | (also) A column width is outside `0 < w ≤ 1`, or the widths add up to more than 1. |
 | `ORD022` | error | A font family is neither bundled nor given by a font asset (PDF). |
 | `ORD023` | error | A document head (`cover_layout: "head"`) names a cover image, cover logos or cover rows. |
+| `ORD024` | error | The `letter` layout with no `letter`; a `letter` with any other layout (or the cover off); a letter that names a cover image, cover logos or cover rows; a letter with no recipient line. |
 
 ## 8. Word as a master
 
@@ -166,3 +223,6 @@ open when it is set); and every layout value is the template's, so the file look
 - **Checks.** Each new finding has a test that makes it fire (`crates/ord/tests/format_02.rs`).
 - **Word furniture.** The example's Word file has no `DOCPROPERTY` field and no field but `PAGE` and
   `NUMPAGES`.
+- **The letter.** `examples/letter.json` (fictional) has the same structure and text in all three formats and
+  renders the same bytes twice. Its Word file is one section, uses only `Letter*` styles for the furniture,
+  has no field but `PAGE` and `NUMPAGES`, and keeps the signature block and the enclosures from splitting.
