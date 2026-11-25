@@ -39,6 +39,27 @@ pub struct Resolved {
     pub cover_details: Option<Vec<(String, String)>>,
     /// (0.2) The text on the left of the running foot.
     pub footer: Option<String>,
+    /// (0.2) The letter's furniture, with its defaults filled in. The writers print it only for the "letter"
+    /// cover layout (`Prepared::letter`).
+    pub letter: Option<RLetter>,
+}
+
+/// A letter's furniture as the writers print it (0.2, spec 0002 §4.2).
+#[derive(Debug, Clone, PartialEq)]
+pub struct RLetter {
+    /// The asset id of the sender's logo.
+    pub logo: Option<String>,
+    /// The sender's name: the letter's, else the document's organisation.
+    pub sender_name: Option<String>,
+    pub sender_lines: Vec<String>,
+    pub date: Option<String>,
+    /// "To", unless the document gives another.
+    pub recipient_label: String,
+    pub recipient: Vec<String>,
+    pub signature: Option<model::LetterSignature>,
+    /// "Enclosures", unless the document gives another.
+    pub enclosures_label: String,
+    pub enclosures: Vec<String>,
 }
 
 /// Document control as the writers print it.
@@ -387,7 +408,12 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
             })
             .unwrap_or_default(),
     };
-    let contents = doc.contents.unwrap_or_else(|| class.is_some_and(|c| c.contents));
+    // A letter has no contents list unless the document asks for one: the class default does not apply.
+    let letter = doc
+        .template
+        .as_ref()
+        .is_some_and(|t| t.cover_layout == Some(model::CoverLayout::Letter) && t.cover != Some(false));
+    let contents = doc.contents.unwrap_or_else(|| !letter && class.is_some_and(|c| c.contents));
     let resolved = Resolved {
         title: doc.title.clone(),
         subtitle: doc.subtitle.clone(),
@@ -407,6 +433,23 @@ pub fn resolve(doc: &Document, register: &Register) -> (Resolved, Vec<Finding>) 
             .as_ref()
             .map(|d| d.iter().map(|i| (i.label.clone(), i.value.clone())).collect()),
         footer: doc.footer.clone(),
+        letter: doc.letter.as_ref().map(|l| RLetter {
+            logo: l.sender.logo.clone(),
+            sender_name: l.sender.name.clone().or_else(|| doc.organisation.clone()),
+            sender_lines: l.sender.lines.clone(),
+            date: l.date.clone(),
+            recipient_label: l
+                .recipient_label
+                .clone()
+                .unwrap_or_else(|| model::Letter::DEFAULT_RECIPIENT_LABEL.to_string()),
+            recipient: l.recipient.clone(),
+            signature: l.signature.clone(),
+            enclosures_label: l
+                .enclosures_label
+                .clone()
+                .unwrap_or_else(|| model::Letter::DEFAULT_ENCLOSURES_LABEL.to_string()),
+            enclosures: l.enclosures.clone(),
+        }),
     };
     (resolved, r.findings)
 }

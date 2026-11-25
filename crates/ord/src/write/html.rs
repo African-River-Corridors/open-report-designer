@@ -45,6 +45,7 @@ pub fn write(p: &Prepared) -> String {
             CoverLayout::Classic => cover(p, &mut h),
             CoverLayout::Photo => photo_cover(p, &mut h),
             CoverLayout::Head => head(p, &mut h),
+            CoverLayout::Letter => letter_head(p, &mut h),
         }
     } else {
         let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
@@ -70,6 +71,7 @@ pub fn write(p: &Prepared) -> String {
 
     h.push_str("<main>\n");
     blocks(p, &d.body, &mut h);
+    letter_foot(p, &mut h);
     for a in &d.appendices {
         let _ = writeln!(h, "<section class=\"appendix\" id=\"{}\">", esc(&a.anchor));
         let _ = writeln!(h, "<h2>{}</h2>", esc(&a.heading()));
@@ -142,6 +144,91 @@ fn head(p: &Prepared, h: &mut String) {
         h.push_str("</div>\n");
     }
     h.push_str("</header>\n");
+}
+
+/// An image of the letter at the size `LetterLook::fit` gives it, as in the PDF and Word writers.
+fn letter_image(p: &Prepared, id: &str, height_mm: f64, max_width_mm: f64, class: &str, alt: &str) -> String {
+    let (Some(a), Some(aspect)) = (p.assets.get(id), p.aspect(id)) else { return String::new() };
+    let (w, h) = crate::render::LetterLook::fit(aspect, height_mm, max_width_mm);
+    format!(
+        "<img class=\"{class}\" src=\"{}\" alt=\"{}\" style=\"width: {}mm; height: {}mm;\"/>",
+        data_uri(a),
+        esc(alt),
+        (w * 1000.0).round() / 1000.0,
+        (h * 1000.0).round() / 1000.0
+    )
+}
+
+/// The letter's head (spec 0002 §4.2), in the same order as the PDF and Word writers: the letterhead, the
+/// rule, the title, the label and the recipient lines.
+fn letter_head(p: &Prepared, h: &mut String) {
+    let d = &p.doc;
+    let t = &p.template;
+    let Some(l) = p.letter() else {
+        let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
+        return;
+    };
+    let lk = crate::render::LETTER;
+    h.push_str("<header class=\"letter-head\">\n<div class=\"letterhead\">\n<div class=\"sender-logo\">");
+    if let Some(id) = &l.logo {
+        let text_mm = f64::from(t.page_width_mm - t.margin_left_mm - t.margin_right_mm);
+        let alt = l.sender_name.as_deref().unwrap_or("");
+        h.push_str(&letter_image(p, id, lk.logo_mm, text_mm * lk.logo_col, "logo", alt));
+    }
+    h.push_str("</div>\n<div class=\"sender\">\n");
+    if let Some(n) = &l.sender_name {
+        let _ = writeln!(h, "<p class=\"sender-name\">{}</p>", esc(n));
+    }
+    for line in &l.sender_lines {
+        let _ = writeln!(h, "<p class=\"sender-line\">{}</p>", esc(line));
+    }
+    if let Some(date) = &l.date {
+        let _ = writeln!(h, "<p class=\"letter-date\">{}</p>", esc(date));
+    }
+    h.push_str("</div>\n</div>\n<hr class=\"letter-rule\"/>\n");
+    let _ = writeln!(h, "<h1 class=\"doc-title\">{}</h1>", esc(&d.title));
+    let _ = writeln!(h, "<div class=\"recipient\">\n<p class=\"label\">{}</p>", esc(&l.recipient_label));
+    for line in &l.recipient {
+        let _ = writeln!(h, "<p class=\"recipient-line\">{}</p>", esc(line));
+    }
+    h.push_str("</div>\n</header>\n");
+}
+
+/// The letter's foot (spec 0002 §4.2), after the body and before any appendix: the signature block, then the
+/// enclosures.
+fn letter_foot(p: &Prepared, h: &mut String) {
+    let Some(l) = p.letter() else { return };
+    let lk = crate::render::LETTER;
+    if let Some(s) = &l.signature {
+        h.push_str("<div class=\"signature\">\n<div class=\"signature-space\">");
+        if let Some(id) = &s.image {
+            h.push_str(&letter_image(
+                p,
+                id,
+                lk.signature_image_mm,
+                lk.signature_width_mm,
+                "signature-image",
+                &s.name,
+            ));
+        }
+        h.push_str("</div>\n");
+        let _ = writeln!(h, "<p class=\"signature-name\">{}</p>", esc(&s.name));
+        if let Some(t) = &s.title {
+            let _ = writeln!(h, "<p class=\"signature-title\">{}</p>", esc(t));
+        }
+        h.push_str("</div>\n");
+    }
+    if !l.enclosures.is_empty() {
+        let _ = writeln!(
+            h,
+            "<div class=\"enclosures\">\n<p class=\"label\">{}</p>\n<ol>",
+            esc(&l.enclosures_label)
+        );
+        for e in &l.enclosures {
+            let _ = writeln!(h, "<li>{}</li>", esc(e));
+        }
+        h.push_str("</ol>\n</div>\n");
+    }
 }
 
 /// The photo cover (spec 0002 §4), in the same order as the PDF and Word writers.
@@ -675,6 +762,68 @@ figcaption {{ font-weight: 700; text-align: left; margin-top: 0.4em; }}
             rpt = hd.rule_pt,
             rabove = hd.rule_above_mm,
             rbelow = hd.rule_below_mm,
+        );
+    }
+    if p.letter().is_some() {
+        let lk = crate::render::LETTER;
+        let hw = "700";
+        let _ = write!(
+            x,
+            r#".letterhead {{ display: flex; justify-content: space-between; align-items: flex-start; }}
+.letterhead .sender-logo {{ flex: 0 0 {logo_col}%; }}
+.letterhead .logo {{ display: block; }}
+.letterhead .sender {{ flex: 1; text-align: right; }}
+.letter-head p {{ margin: 0; }}
+.sender-name {{ font-family: "{head}", Georgia, serif; font-weight: {hw}; color: {hink}; font-size: {name_pt}pt; line-height: {name_lh}; margin: 0 0 {name_after}mm !important; }}
+.sender-line, .letter-date {{ color: var(--ink-2); font-size: {addr_pt}pt; line-height: {addr_lh}; }}
+.letter-date {{ margin-top: {date_above}mm !important; }}
+.letter-rule {{ border: none; height: {rule_pt}pt; background: {caccent}; margin: {rule_above}mm 0 {rule_below}mm; }}
+.letter-head .doc-title {{ font-family: "{head}", Georgia, serif; font-weight: {hw}; color: {hink}; font-size: {title_pt}pt; line-height: {title_lh}; margin: 0 0 {title_after}mm; }}
+.letter-head .label, .enclosures .label {{ color: {caccent}; font-size: {label_pt}pt; font-weight: 700; letter-spacing: {tracking}em; text-transform: uppercase; line-height: {label_lh}; margin: 0 0 {label_after}mm; }}
+.recipient {{ margin: 0 0 {recipient_after}mm; }}
+.recipient-line {{ line-height: {recipient_lh}; }}
+.signature {{ margin-top: {sig_above}mm; break-inside: avoid; }}
+.signature-space {{ width: {sig_w}mm; height: {sig_h}mm; border-bottom: {sig_rule}pt solid var(--ink); position: relative; margin-bottom: {name_above}mm; }}
+.signature-image {{ position: absolute; left: 0; bottom: 0; }}
+.signature p {{ margin: 0; line-height: {sig_lh}; }}
+.signature-name {{ font-weight: 700; color: {hink}; font-size: {sig_name_pt}pt; }}
+.signature-title {{ color: var(--ink-2); font-size: {sig_title_pt}pt; }}
+.enclosures {{ margin-top: {encl_above}mm; break-inside: avoid; }}
+.enclosures ol {{ margin: 0; font-size: {encl_pt}pt; line-height: {encl_lh}; }}
+"#,
+            logo_col = lk.logo_col * 100.0,
+            head = t.heading_font,
+            hink = t.heading_ink,
+            caccent = t.cover_accent,
+            name_pt = lk.name_pt,
+            name_lh = lk.name_lh,
+            name_after = lk.name_after_mm,
+            addr_pt = lk.address_pt,
+            addr_lh = lk.address_lh,
+            date_above = lk.date_above_mm,
+            rule_pt = lk.rule_pt,
+            rule_above = lk.rule_above_mm,
+            rule_below = lk.rule_below_mm,
+            title_pt = lk.title_pt,
+            title_lh = lk.title_lh,
+            title_after = lk.title_after_mm,
+            label_pt = lk.label_pt,
+            label_lh = lk.label_lh,
+            tracking = lk.label_tracking,
+            label_after = lk.label_after_mm,
+            recipient_after = lk.recipient_after_mm,
+            recipient_lh = lk.recipient_lh,
+            sig_above = lk.signature_above_mm,
+            sig_w = lk.signature_width_mm,
+            sig_h = lk.signature_height_mm,
+            sig_rule = lk.signature_rule_pt,
+            name_above = lk.signature_name_above_mm,
+            sig_lh = lk.signature_lh,
+            sig_name_pt = lk.signature_name_pt,
+            sig_title_pt = lk.signature_title_pt,
+            encl_above = lk.enclosures_above_mm,
+            encl_pt = lk.enclosure_pt,
+            encl_lh = lk.enclosure_lh,
         );
     }
     if t.cover && t.cover_layout == CoverLayout::Photo {

@@ -532,7 +532,163 @@ pub fn styles(p: &Prepared) -> String {
     let _ = &panel_line_ink;
     let hd = crate::render::HEAD;
     let hink_head = hex(t.heading_ink);
+    let lk = crate::render::LETTER;
+    // Twentieths of a point, from millimetres, as the body writer rounds them.
+    let tw = |v: f64| (v * 1440.0 / 25.4).round() as u32;
+    let text_mm = f64::from(t.page_width_mm - t.margin_left_mm - t.margin_right_mm);
+    let size = |pt: f64| format!("<w:sz w:val=\"{0}\"/><w:szCs w:val=\"{0}\"/>", hp(pt));
+    let line = |pt: f64, lh: f64, rule: &str| {
+        format!(
+            "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"{}\" w:lineRule=\"{rule}\"/>",
+            exact(pt, lh)
+        )
+    };
+    let label_rpr = format!(
+        "<w:b/><w:bCs/><w:caps/><w:color w:val=\"{caccent}\"/><w:spacing w:val=\"{}\"/>{}",
+        (lk.label_pt * lk.label_tracking * 20.0).round() as u32,
+        size(lk.label_pt)
+    );
+    let body_pt = f64::from(t.body_size_pt);
     let extra: Vec<(String, String, &str, &str, String, String)> = vec![
+        // The letter (spec 0002 §4.2): every size and space from `render::LETTER`, as the PDF writer reads them.
+        (
+            "LetterLogo".into(),
+            "Letter Logo".into(),
+            "Normal",
+            "Normal",
+            "<w:spacing w:before=\"0\" w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>".into(),
+            String::new(),
+        ),
+        (
+            "LetterSender".into(),
+            "Letter Sender".into(),
+            "Normal",
+            "LetterAddress",
+            format!(
+                "<w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"atLeast\"/><w:jc w:val=\"right\"/>",
+                tw(lk.name_after_mm),
+                exact(lk.name_pt, lk.name_lh)
+            ),
+            format!("{head}<w:b/><w:bCs/><w:color w:val=\"{hink_head}\"/>{}", size(lk.name_pt)),
+        ),
+        (
+            "LetterAddress".into(),
+            "Letter Address".into(),
+            "Normal",
+            "LetterAddress",
+            format!("{}<w:jc w:val=\"right\"/>", line(lk.address_pt, lk.address_lh, "atLeast")),
+            format!("<w:color w:val=\"{ink2}\"/>{}", size(lk.address_pt)),
+        ),
+        (
+            "LetterDate".into(),
+            "Letter Date".into(),
+            "LetterAddress",
+            "Normal",
+            format!("<w:spacing w:before=\"{}\"/>", tw(lk.date_above_mm)),
+            String::new(),
+        ),
+        (
+            "LetterRule".into(),
+            "Letter Rule".into(),
+            "Normal",
+            "LetterTitle",
+            format!(
+                "<w:pBdr><w:bottom w:val=\"single\" w:sz=\"{}\" w:space=\"0\" w:color=\"{caccent}\"/></w:pBdr>\
+                 <w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"20\" w:lineRule=\"exact\"/>",
+                (lk.rule_pt * 8.0).round() as u32,
+                tw(lk.rule_above_mm),
+                tw(lk.rule_below_mm)
+            ),
+            "<w:sz w:val=\"2\"/><w:szCs w:val=\"2\"/>".into(),
+        ),
+        (
+            "LetterTitle".into(),
+            "Letter Title".into(),
+            "Normal",
+            "LetterLabel",
+            format!(
+                "<w:keepNext/><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"atLeast\"/>",
+                tw(lk.title_after_mm),
+                exact(lk.title_pt, lk.title_lh)
+            ),
+            format!("{head}<w:b/><w:bCs/><w:color w:val=\"{hink_head}\"/>{}", size(lk.title_pt)),
+        ),
+        (
+            "LetterLabel".into(),
+            "Letter Label".into(),
+            "Normal",
+            "LetterRecipient",
+            format!(
+                "<w:keepNext/><w:spacing w:before=\"0\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                tw(lk.label_after_mm),
+                exact(lk.label_pt, lk.label_lh)
+            ),
+            label_rpr.clone(),
+        ),
+        (
+            "LetterRecipient".into(),
+            "Letter Recipient".into(),
+            "Normal",
+            "LetterRecipient",
+            format!("<w:keepNext/>{}", line(body_pt, lk.recipient_lh, "atLeast")),
+            String::new(),
+        ),
+        (
+            // The space to sign in: 58 mm wide (the right indent takes the rest of the line), at least 16 mm
+            // high, with a rule of the ink along its foot. Its text is tiny, so a signature picture in it
+            // stands on the rule.
+            "LetterSignatureSpace".into(),
+            "Letter Signature Space".into(),
+            "Normal",
+            "LetterSignatureName",
+            format!(
+                "<w:keepNext/><w:keepLines/><w:pBdr><w:bottom w:val=\"single\" w:sz=\"{}\" w:space=\"0\" w:color=\"{ink}\"/></w:pBdr>\
+                 <w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"atLeast\"/><w:ind w:right=\"{}\"/>",
+                (lk.signature_rule_pt * 8.0).round() as u32,
+                tw(lk.signature_above_mm),
+                tw(lk.signature_name_above_mm),
+                tw(lk.signature_height_mm),
+                tw((text_mm - lk.signature_width_mm).max(0.0))
+            ),
+            "<w:sz w:val=\"2\"/><w:szCs w:val=\"2\"/>".into(),
+        ),
+        (
+            "LetterSignatureName".into(),
+            "Letter Signature Name".into(),
+            "Normal",
+            "LetterSignatureTitle",
+            format!("<w:keepNext/><w:keepLines/>{}", line(lk.signature_name_pt, lk.signature_lh, "atLeast")),
+            format!("<w:b/><w:bCs/><w:color w:val=\"{hink_head}\"/>{}", size(lk.signature_name_pt)),
+        ),
+        (
+            "LetterSignatureTitle".into(),
+            "Letter Signature Title".into(),
+            "Normal",
+            "Normal",
+            format!("<w:keepLines/>{}", line(lk.signature_title_pt, lk.signature_lh, "atLeast")),
+            format!("<w:color w:val=\"{ink2}\"/>{}", size(lk.signature_title_pt)),
+        ),
+        (
+            "LetterEnclosuresLabel".into(),
+            "Letter Enclosures Label".into(),
+            "LetterLabel",
+            "LetterEnclosure",
+            format!(
+                "<w:keepNext/><w:spacing w:before=\"{}\" w:after=\"{}\" w:line=\"{}\" w:lineRule=\"exact\"/>",
+                tw(lk.enclosures_above_mm),
+                tw(lk.label_after_mm),
+                exact(lk.label_pt, lk.label_lh)
+            ),
+            label_rpr,
+        ),
+        (
+            "LetterEnclosure".into(),
+            "Letter Enclosure".into(),
+            "Normal",
+            "LetterEnclosure",
+            format!("<w:keepNext/><w:keepLines/>{}", line(lk.enclosure_pt, lk.enclosure_lh, "atLeast")),
+            size(lk.enclosure_pt),
+        ),
         (
             "HeadKicker".into(),
             "Head Kicker".into(),
@@ -772,6 +928,19 @@ pub fn styles(p: &Prepared) -> String {
             "HeadKicker" | "HeadTitle" | "HeadMeta" | "HeadNotice" | "HeadRule" => {
                 t.cover && t.cover_layout == crate::model::CoverLayout::Head
             }
+            // The letter's styles, each only when the letter has the part that uses it.
+            id if id.starts_with("Letter") => match p.letter() {
+                None => false,
+                Some(l) => match id {
+                    "LetterSender" => l.sender_name.is_some(),
+                    "LetterAddress" => !l.sender_lines.is_empty() || l.date.is_some(),
+                    "LetterDate" => l.date.is_some(),
+                    "LetterSignatureSpace" | "LetterSignatureName" => l.signature.is_some(),
+                    "LetterSignatureTitle" => l.signature.as_ref().is_some_and(|s| s.title.is_some()),
+                    "LetterEnclosuresLabel" | "LetterEnclosure" => !l.enclosures.is_empty(),
+                    _ => true,
+                },
+            },
             _ => t.cover && t.cover_layout == crate::model::CoverLayout::Photo,
         };
         if used {

@@ -17,7 +17,65 @@ pub fn check(doc: &Document, assets: &Assets, register: &Register) -> Vec<Findin
     images(doc, assets, &mut out);
     cover(doc, assets, &mut out);
     head(doc, &mut out);
+    letter(doc, assets, &mut out);
     out
+}
+
+/// The letter layout and the document's `letter` go together, and a letter has no photograph, logo strip or
+/// control block (ORD024): a field that would not be printed is refused, not dropped without a word. The
+/// sender's logo and the signature image name image assets that exist and are valid (ORD011).
+fn letter(doc: &Document, assets: &Assets, out: &mut Vec<Finding>) {
+    let laid_out = doc
+        .template
+        .as_ref()
+        .is_some_and(|t| t.cover_layout == Some(crate::model::CoverLayout::Letter) && t.cover != Some(false));
+    let Some(l) = &doc.letter else {
+        if laid_out {
+            out.push(Finding::error(
+                "ORD024",
+                "/letter",
+                "the letter layout (cover_layout \"letter\") needs the document's `letter`: the sender and the \
+                 recipient. Add it or choose another cover layout",
+            ));
+        }
+        return;
+    };
+    if !laid_out {
+        out.push(Finding::error(
+            "ORD024",
+            "/letter",
+            "only the letter layout prints a `letter`: set template.cover_layout to \"letter\" (with the cover \
+             on) or remove this field",
+        ));
+    } else {
+        let mut unused = Vec::new();
+        if doc.cover_image.is_some() {
+            unused.push("/cover_image");
+        }
+        if !doc.cover_logos.is_empty() {
+            unused.push("/cover_logos");
+        }
+        if doc.cover_details.as_ref().is_some_and(|d| !d.is_empty()) {
+            unused.push("/cover_details");
+        }
+        for path in unused {
+            out.push(Finding::error(
+                "ORD024",
+                path,
+                "a letter (cover_layout \"letter\") prints no photograph, logos or control block; remove this \
+                 field or choose another cover layout",
+            ));
+        }
+    }
+    if l.recipient.is_empty() {
+        out.push(Finding::error("ORD024", "/letter/recipient", "a letter names at least one recipient line"));
+    }
+    if let Some(id) = &l.sender.logo {
+        image(id, "/letter/sender/logo", assets, out);
+    }
+    if let Some(id) = l.signature.as_ref().and_then(|s| s.image.as_ref()) {
+        image(id, "/letter/signature/image", assets, out);
+    }
 }
 
 /// A document head has no photograph, logo strip or control block (ORD023): a field that names one would be
@@ -65,6 +123,9 @@ fn version(doc: &Document, out: &mut Vec<Finding>) {
     }
     if doc.footer.is_some() {
         used.push("/footer".into());
+    }
+    if doc.letter.is_some() {
+        used.push("/letter".into());
     }
     for (id, a) in &doc.assets {
         if matches!(a.media_type, crate::model::MediaType::Jpeg | crate::model::MediaType::Font) {
