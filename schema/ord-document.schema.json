@@ -95,6 +95,17 @@
         "null"
       ]
     },
+    "letter": {
+      "description": "(0.2) The furniture of a letter: the letterhead, the addressee, the signature block and the\nenclosures. Printed by the \"letter\" cover layout, and refused with any other.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Letter"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "body": {
       "description": "The main matter.",
       "type": "array",
@@ -296,6 +307,127 @@
       "required": [
         "label",
         "value"
+      ]
+    },
+    "Letter": {
+      "description": "The furniture of a letter (0.2, spec 0002 §4.2). Every value is text the tool gives: the core reads no\nclock and formats no date.",
+      "type": "object",
+      "properties": {
+        "sender": {
+          "description": "The letterhead: who the letter is from.",
+          "$ref": "#/$defs/LetterSender"
+        },
+        "date": {
+          "description": "The date as printed under the sender's address, such as \"25 November 2026\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipient_label": {
+          "description": "The label over the recipient lines. Default \"To\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recipient": {
+          "description": "The addressee, one line each: a name, an organisation, an address. At least one line.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "signature": {
+          "description": "The signature block after the body.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LetterSignature"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "enclosures_label": {
+          "description": "The label over the list of enclosures. Default \"Enclosures\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enclosures": {
+          "description": "What comes with the letter, as a numbered list after the signature block. Empty leaves the list out.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sender",
+        "recipient"
+      ]
+    },
+    "LetterSender": {
+      "description": "The sender of a letter: the letterhead (0.2).",
+      "type": "object",
+      "properties": {
+        "logo": {
+          "description": "An asset id for the sender's logo, on the left of the letterhead.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The sender's name. Default the document's `organisation`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lines": {
+          "description": "The sender's address, one line each.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "lines"
+      ]
+    },
+    "LetterSignature": {
+      "description": "The signature block of a letter (0.2).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name of the person who signs.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Their title, under the name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "description": "An asset id for an image of the signature, on the rule over the name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
       ]
     },
     "Block": {
@@ -779,7 +911,7 @@
           ]
         },
         "cover_layout": {
-          "description": "\"classic\" (the default), \"photo\" (a photograph band, the summary and the logo strip on cards, and a\ncontrol block) or \"head\" (no cover page: the organisation, title, subtitle, notice and summary head\npage 1, and the body follows on the same page).",
+          "description": "\"classic\" (the default), \"photo\" (a photograph band, the summary and the logo strip on cards, and a\ncontrol block), \"head\" (no cover page: the organisation, title, subtitle, notice and summary head\npage 1, and the body follows on the same page) or \"letter\" (no cover page and no control page: the\ndocument's `letter` opens page 1 with a letterhead, the title and the addressee, and closes the body\nwith a signature block and the enclosures).",
           "anyOf": [
             {
               "$ref": "#/$defs/CoverLayout"
@@ -1091,6 +1223,11 @@
           "description": "No cover page: a document head opens page 1, then the body follows on the same page.",
           "type": "string",
           "const": "head"
+        },
+        {
+          "description": "No cover page and no control page: a business letter. The document's `letter` gives the letterhead\nand the addressee before the body, and the signature block and the enclosures after it.",
+          "type": "string",
+          "const": "letter"
         }
       ]
     },

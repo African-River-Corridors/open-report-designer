@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::finding::Finding;
 use crate::model::{
-    Appendix, AssetSource, Block, Control, CoverImage, CoverLogo, DataItem, Document, Section,
+    Appendix, AssetSource, Block, Control, CoverImage, CoverLogo, DataItem, Document, Letter, Section,
     TemplateOverrides,
 };
 use crate::register::{Register, Stage};
@@ -43,6 +43,8 @@ pub struct Manifest {
     pub cover_details: Option<Vec<DataItem>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub footer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter: Option<Letter>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub assets: BTreeMap<String, AssetSource>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,6 +162,7 @@ pub fn assemble(
         cover_logos: m.cover_logos,
         cover_details: m.cover_details,
         footer: m.footer,
+        letter: m.letter,
         body: body_chapters.iter().map(|c| section(c)).collect(),
         appendices: appendix_chapters
             .iter()

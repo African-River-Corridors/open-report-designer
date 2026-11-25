@@ -406,6 +406,10 @@ impl Template {
         if let Some(cover) = overrides.cover {
             t.cover = cover;
         }
+        // A letter has no document-control page, whatever `control_page` says (spec 0002 §4.2).
+        if t.cover && t.cover_layout == CoverLayout::Letter {
+            t.control_page = false;
+        }
         if let Some(logo) = &overrides.organisation_logo {
             if assets.contains_key(logo) {
                 t.organisation_logo = Some(logo.clone());

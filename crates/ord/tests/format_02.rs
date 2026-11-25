@@ -549,3 +549,365 @@ fn the_data_box_ground_and_rule_reach_every_writer() {
     let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
     assert_eq!(p.template.data_rule_colour(), p.template.ink);
 }
+
+// --- The letter (cover_layout "letter", spec 0002 §4.2) -------------------------------------------------
+
+fn letter() -> (ord::Document, ord::Assets) {
+    load(&repo().join("examples/letter.json"))
+}
+
+/// A minimal letter as JSON: the layout, a sender with one address line and one recipient line.
+fn letter_doc() -> serde_json::Value {
+    let mut v = v02(serde_json::json!([prose("Body.")]));
+    v["template"] = serde_json::json!({ "cover_layout": "letter" });
+    v["letter"] = serde_json::json!({ "sender": { "lines": ["1 Quay Road"] }, "recipient": ["Ms A Reader"] });
+    v
+}
+
+fn rendered(d: &ord::Document, a: &ord::Assets, f: Format) -> Vec<u8> {
+    ord::render(d, a, &ord::builtin_register(), f).unwrap().bytes
+}
+
+#[test]
+fn the_letter_example_raises_no_finding() {
+    let (d, a) = letter();
+    assert_eq!(ord::check(&d, &a, &ord::builtin_register()), Vec::<ord::Finding>::new());
+}
+
+#[test]
+fn a_01_document_may_not_use_a_letter_or_the_letter_layout() {
+    let mut v = letter_doc();
+    v["ord"] = "0.1".into();
+    let got = codes_of(&v, &Default::default());
+    for path in ["/letter", "/template/cover_layout"] {
+        assert!(got.contains(&("ORD001", path.to_string())), "{path} not refused: {got:?}");
+    }
+    v["ord"] = "0.2".into();
+    assert_eq!(codes_of(&v, &Default::default()), []);
+}
+
+#[test]
+fn a_letters_logo_and_signature_name_image_assets() {
+    let mut v = letter_doc();
+    v["letter"]["sender"]["logo"] = "mark".into();
+    v["letter"]["signature"] = serde_json::json!({ "name": "B Writer", "image": "sig" });
+    // Missing: neither asset exists.
+    let got = codes_of(&v, &Default::default());
+    for path in ["/letter/sender/logo", "/letter/signature/image"] {
+        assert!(got.contains(&("ORD011", path.to_string())), "missing {path} not refused: {got:?}");
+    }
+    // Invalid: bytes that are not the image they claim to be. A font: never an image.
+    v["assets"] =
+        serde_json::json!({ "mark": { "media_type": "image/png" }, "sig": { "media_type": "font/ttf" } });
+    let font = std::fs::read(repo().join("crates/ord/fonts/PublicSans-Regular.ttf")).unwrap();
+    let supplied = std::collections::BTreeMap::from([
+        ("mark".to_string(), b"not a png".to_vec()),
+        ("sig".to_string(), font),
+    ]);
+    let (assets, _) = ord::assets::collect(&doc(&v), &supplied);
+    let findings = ord::check(&doc(&v), &assets, &ord::builtin_register());
+    let of = |path: &str| {
+        findings.iter().find(|f| f.code == "ORD011" && f.path == path).map(|f| f.message.clone())
+    };
+    assert!(of("/letter/sender/logo").is_some_and(|m| m.contains("not a valid image/png")), "{findings:?}");
+    assert!(
+        of("/letter/signature/image").is_some_and(|m| m.contains("a font, not an image")),
+        "{findings:?}"
+    );
+    // Valid images: no finding.
+    v["assets"] =
+        serde_json::json!({ "mark": { "media_type": "image/png" }, "sig": { "media_type": "image/png" } });
+    let supplied =
+        std::collections::BTreeMap::from([("mark".to_string(), png()), ("sig".to_string(), png())]);
+    let (assets, _) = ord::assets::collect(&doc(&v), &supplied);
+    assert_eq!(codes_of(&v, &assets), []);
+}
+
+#[test]
+fn the_letter_layout_and_the_letter_go_together() {
+    // The layout with no letter.
+    let mut v = letter_doc();
+    v.as_object_mut().unwrap().remove("letter");
+    assert_eq!(codes_of(&v, &Default::default()), [("ORD024", "/letter".to_string())]);
+    // A letter without the layout: on another layout, with no template at all, and with the cover turned off.
+    for template in [
+        Some(serde_json::json!({ "cover_layout": "head" })),
+        Some(serde_json::json!({ "cover_layout": "letter", "cover": false })),
+        None,
+    ] {
+        let mut v = letter_doc();
+        match template {
+            Some(t) => v["template"] = t,
+            None => drop(v.as_object_mut().unwrap().remove("template")),
+        }
+        assert_eq!(codes_of(&v, &Default::default()), [("ORD024", "/letter".to_string())], "{v}");
+    }
+    // The two findings say different things.
+    let mut none = letter_doc();
+    none.as_object_mut().unwrap().remove("letter");
+    let mut other = letter_doc();
+    other["template"]["cover_layout"] = "photo".into();
+    let message = |v: &serde_json::Value| {
+        ord::check(&doc(v), &Default::default(), &ord::builtin_register())[0].message.clone()
+    };
+    assert_ne!(message(&none), message(&other));
+    // A letter with no recipient line.
+    let mut v = letter_doc();
+    v["letter"]["recipient"] = serde_json::json!([]);
+    assert_eq!(codes_of(&v, &Default::default()), [("ORD024", "/letter/recipient".to_string())]);
+}
+
+#[test]
+fn a_letter_refuses_a_photograph_logos_or_control_rows() {
+    let mut v = letter_doc();
+    v["cover_image"] = serde_json::json!({ "asset": "p", "alt": "A photograph" });
+    v["cover_logos"] = serde_json::json!([{ "asset": "p", "name": "Mark" }]);
+    v["cover_details"] = serde_json::json!([{ "label": "Status", "value": "Draft" }]);
+    v["assets"] = serde_json::json!({ "p": { "media_type": "image/png" } });
+    let supplied = std::collections::BTreeMap::from([("p".to_string(), png())]);
+    let (assets, _) = ord::assets::collect(&doc(&v), &supplied);
+    let got = codes_of(&v, &assets);
+    for path in ["/cover_image", "/cover_logos", "/cover_details"] {
+        assert!(got.contains(&("ORD024", path.to_string())), "{path} not refused: {got:?}");
+    }
+    assert!(got.iter().all(|(c, _)| *c == "ORD024"), "{got:?}");
+    // Without them, and with an empty control list, the letter is accepted.
+    v.as_object_mut().unwrap().remove("cover_image");
+    v.as_object_mut().unwrap().remove("cover_logos");
+    v["cover_details"] = serde_json::json!([]);
+    assert_eq!(codes_of(&v, &assets), []);
+}
+
+#[test]
+fn a_letter_takes_its_defaults_from_the_document() {
+    let mut v = letter_doc();
+    v["organisation"] = "Harbour Works Ltd".into();
+    let (r, f) = ord::resolve::resolve(&doc(&v), &ord::builtin_register());
+    assert!(f.is_empty(), "{f:?}");
+    let l = r.letter.expect("a resolved letter");
+    assert_eq!(l.sender_name.as_deref(), Some("Harbour Works Ltd"), "the sender's name is the organisation");
+    assert_eq!((l.recipient_label.as_str(), l.enclosures_label.as_str()), ("To", "Enclosures"));
+    assert!(l.logo.is_none() && l.date.is_none() && l.signature.is_none() && l.enclosures.is_empty());
+    // Given, they are kept.
+    v["letter"]["sender"]["name"] = "The Works".into();
+    v["letter"]["recipient_label"] = "For".into();
+    v["letter"]["enclosures_label"] = "With this letter".into();
+    let (r, _) = ord::resolve::resolve(&doc(&v), &ord::builtin_register());
+    let l = r.letter.unwrap();
+    assert_eq!(l.sender_name.as_deref(), Some("The Works"));
+    assert_eq!((l.recipient_label.as_str(), l.enclosures_label.as_str()), ("For", "With this letter"));
+}
+
+#[test]
+fn a_letter_has_no_cover_page_and_no_control_page() {
+    // The control page is on by default; a letter has none, in every writer.
+    let (d, a) = (doc(&letter_doc()), ord::Assets::new());
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    assert!(!p.template.control_page);
+    let html = String::from_utf8(rendered(&d, &a, Format::Html)).unwrap();
+    assert!(html.contains("<header class=\"letter-head\">"), "no letter head");
+    assert!(!html.contains("class=\"cover") && !html.contains("class=\"document-control"));
+    let body = docx_part(&rendered(&d, &a, Format::Docx), "word/document.xml").unwrap();
+    assert_eq!(body.matches("<w:sectPr").count(), 1, "a letter is one section");
+    assert!(!body.contains(ord::render::CONTROL));
+    assert!(ord::render(&d, &a, &ord::builtin_register(), Format::Pdf).is_ok());
+    // No contents list either, though the class asks for one; a document that asks for one gets it.
+    let mut v = letter_doc();
+    v["body"] = serde_json::json!([section("s", "Programme", serde_json::json!([prose("Text.")]))]);
+    let (r, _) = ord::resolve::resolve(&doc(&v), &ord::builtin_register());
+    assert!(!r.contents);
+    v["contents"] = true.into();
+    let (r, _) = ord::resolve::resolve(&doc(&v), &ord::builtin_register());
+    assert!(r.contents);
+    let html = String::from_utf8(rendered(&doc(&v), &a, Format::Html)).unwrap();
+    assert!(html.contains("<nav class=\"contents\""));
+}
+
+#[test]
+fn the_letter_in_word_is_one_section_in_letter_styles_with_page_fields_only() {
+    let (d, a) = letter();
+    let docx = rendered(&d, &a, Format::Docx);
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    let styles = docx_part(&docx, "word/styles.xml").unwrap();
+    // One section: no cover section, and no cover footer part.
+    assert_eq!(body.matches("<w:sectPr").count(), 1, "the letter must not open a section of its own");
+    assert!(docx_part(&docx, "word/footer2.xml").is_none());
+    // The letter's styles are defined and used; no cover or head style is written.
+    for s in [
+        "LetterLogo",
+        "LetterSender",
+        "LetterAddress",
+        "LetterDate",
+        "LetterRule",
+        "LetterTitle",
+        "LetterLabel",
+        "LetterRecipient",
+        "LetterSignatureSpace",
+        "LetterSignatureName",
+        "LetterSignatureTitle",
+        "LetterEnclosuresLabel",
+        "LetterEnclosure",
+    ] {
+        assert!(body.contains(&format!("<w:pStyle w:val=\"{s}\"/>")), "{s} not used");
+        assert!(styles.contains(&format!("w:styleId=\"{s}\"")), "{s} not defined");
+    }
+    assert!(!styles.contains("w:styleId=\"CoverTitle\"") && !styles.contains("w:styleId=\"HeadTitle\""));
+    // The only fields are PAGE and NUMPAGES, in the running foot.
+    let foot = docx_part(&docx, "word/footer1.xml").unwrap();
+    let mut fields = Vec::new();
+    for x in [&foot, &body, &docx_part(&docx, "word/header1.xml").unwrap()] {
+        assert!(!x.contains("DOCPROPERTY") && !x.contains("w:instrText") && !x.contains("w:fldChar"));
+        fields.extend(x.split("w:instr=\"").skip(1).map(|i| i.split('"').next().unwrap().trim().to_string()));
+    }
+    assert_eq!(fields, ["PAGE", "NUMPAGES"]);
+    // The letterhead is a two-column table with no borders: the logo cell, then the sender's text on the right.
+    let head = table_holding(&body, "1 Quay Road");
+    assert_eq!(head.matches("<w:gridCol ").count(), 2);
+    assert_eq!(head.matches("w:val=\"nil\"").count(), 6, "the letterhead has a border: {head}");
+    assert!(
+        head.find("<w:drawing>").unwrap() < head.find("Harbour Works Ltd").unwrap(),
+        "the logo comes first"
+    );
+    assert!(
+        styles.contains("w:styleId=\"LetterSender\"")
+            && style_of(&styles, "LetterSender").contains("<w:jc w:val=\"right\"/>")
+    );
+    assert!(style_of(&styles, "LetterAddress").contains("<w:jc w:val=\"right\"/>"));
+    // The accent rule is a paragraph border in the accent, 1.5 pt (12 eighths of a point).
+    let rule = style_of(&styles, "LetterRule");
+    assert!(
+        rule.contains("<w:bottom w:val=\"single\" w:sz=\"12\" w:space=\"0\" w:color=\"B8862E\"/>"),
+        "{rule}"
+    );
+}
+
+/// The definition of one paragraph style in `word/styles.xml`.
+fn style_of(styles: &str, id: &str) -> String {
+    let start = styles.find(&format!("w:styleId=\"{id}\"")).unwrap_or_else(|| panic!("no style {id}"));
+    let end = start + styles[start..].find("</w:style>").unwrap();
+    styles[start..end].to_string()
+}
+
+/// The paragraphs of the body in the given style, each as its XML.
+fn paragraphs_in<'a>(body: &'a str, style: &str) -> Vec<&'a str> {
+    let mark = format!("<w:pStyle w:val=\"{style}\"/>");
+    body.split("<w:p>").filter(|p| p.contains(&mark)).map(|p| p.split("</w:p>").next().unwrap()).collect()
+}
+
+#[test]
+fn the_signature_block_and_the_enclosures_do_not_split_in_word() {
+    let (d, a) = letter();
+    let docx = rendered(&d, &a, Format::Docx);
+    let body = docx_part(&docx, "word/document.xml").unwrap();
+    let styles = docx_part(&docx, "word/styles.xml").unwrap();
+    // The signature block: the space keeps with the name and the name with the title; the title ends it.
+    for s in ["LetterSignatureSpace", "LetterSignatureName"] {
+        assert!(
+            style_of(&styles, s).contains("<w:keepNext/><w:keepLines/>"),
+            "{s} does not keep with the next"
+        );
+        assert!(paragraphs_in(&body, s).iter().all(|p| !p.contains("<w:keepNext w:val=\"0\"/>")));
+    }
+    assert!(!style_of(&styles, "LetterSignatureTitle").contains("<w:keepNext/>"));
+    assert!(style_of(&styles, "LetterSignatureTitle").contains("<w:keepLines/>"));
+    // The signature space: 58 mm wide (the text width less the right indent), at least 16 mm high, with a
+    // 0.75 pt rule of the ink at its foot; the signature image sits in it.
+    let space = style_of(&styles, "LetterSignatureSpace");
+    let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+    let text_mm =
+        f64::from(p.template.page_width_mm - p.template.margin_left_mm - p.template.margin_right_mm);
+    let twips = |mm: f64| (mm * 1440.0 / 25.4).round() as u32;
+    assert!(space.contains(&format!("<w:ind w:right=\"{}\"/>", twips(text_mm - 58.0))), "{space}");
+    assert!(space.contains(&format!("w:line=\"{}\" w:lineRule=\"atLeast\"", twips(16.0))), "{space}");
+    assert!(
+        space.contains("<w:bottom w:val=\"single\" w:sz=\"6\" w:space=\"0\" w:color=\"2B2925\"/>"),
+        "{space}"
+    );
+    assert!(space.contains(&format!("w:before=\"{}\"", twips(9.0))), "{space}");
+    let spaces = paragraphs_in(&body, "LetterSignatureSpace");
+    assert_eq!(spaces.len(), 1);
+    assert!(spaces[0].contains("<w:drawing>"), "no signature image");
+    // The enclosures: the label and every item but the last keep with the next; every item is numbered.
+    assert!(style_of(&styles, "LetterEnclosuresLabel").contains("<w:keepNext/>"));
+    assert!(style_of(&styles, "LetterEnclosure").contains("<w:keepNext/><w:keepLines/>"));
+    let items = paragraphs_in(&body, "LetterEnclosure");
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|p| p.contains("<w:numPr>")));
+    assert!(
+        !items[0].contains("<w:keepNext w:val=\"0\"/>") && items[1].contains("<w:keepNext w:val=\"0\"/>")
+    );
+    // With no title, the name ends the signature block.
+    let mut v = letter_doc();
+    v["letter"]["signature"] = serde_json::json!({ "name": "B Writer" });
+    let body =
+        docx_part(&rendered(&doc(&v), &Default::default(), Format::Docx), "word/document.xml").unwrap();
+    let names = paragraphs_in(&body, "LetterSignatureName");
+    assert!(names.len() == 1 && names[0].contains("<w:keepNext w:val=\"0\"/>"), "{names:?}");
+    assert!(paragraphs_in(&body, "LetterSignatureTitle").is_empty());
+    // The space is there with no image: a place to sign.
+    let spaces = paragraphs_in(&body, "LetterSignatureSpace");
+    assert!(spaces.len() == 1 && !spaces[0].contains("<w:drawing>"));
+}
+
+#[test]
+fn the_letter_styles_are_not_written_for_other_layouts() {
+    for (d, a) in [photo(), briefing(), example()] {
+        let docx = rendered(&d, &a, Format::Docx);
+        assert!(!docx_part(&docx, "word/styles.xml").unwrap().contains("Letter"));
+        let html = String::from_utf8(rendered(&d, &a, Format::Html)).unwrap();
+        assert!(!html.contains("letter-head") && !html.contains(".signature"));
+    }
+}
+
+#[test]
+fn the_letter_in_html_is_in_the_order_of_the_page() {
+    let (d, a) = letter();
+    let html = String::from_utf8(rendered(&d, &a, Format::Html)).unwrap();
+    let at = |s: &str| html.find(s).unwrap_or_else(|| panic!("no {s:?} in the HTML"));
+    let order = [
+        "<header class=\"letter-head\">",
+        "<p class=\"sender-name\">Harbour Works Ltd</p>",
+        "<p class=\"sender-line\">1 Quay Road</p>",
+        "<p class=\"letter-date\">25 November 2026</p>",
+        "<hr class=\"letter-rule\"/>",
+        "<h1 class=\"doc-title\">Quay wall repairs",
+        "<p class=\"label\">To</p>",
+        "<p class=\"recipient-line\">Ms A Reader</p>",
+        "<main>",
+        "Dear Ms Reader,",
+        "Yours sincerely,",
+        "<div class=\"signature\">",
+        "<p class=\"signature-name\">B Writer</p>",
+        "<p class=\"signature-title\">Director</p>",
+        "<div class=\"enclosures\">",
+        "<p class=\"label\">Enclosures</p>",
+        "<li>Schedule of works</li>",
+        "</main>",
+    ];
+    for pair in order.windows(2) {
+        assert!(at(pair[0]) < at(pair[1]), "{:?} must come before {:?}", pair[0], pair[1]);
+    }
+    assert!(!html.contains("class=\"cover") && !html.contains("class=\"document-control"));
+    // The measurements of the core's table reach the style sheet.
+    assert!(html.contains(".signature-space { width: 58mm; height: 16mm;"), "no signature space");
+    assert!(html.contains(".letter-rule { border: none; height: 1.5pt; background: #b8862e;"));
+}
+
+#[test]
+fn appendices_come_after_the_enclosures() {
+    let mut v = letter_doc();
+    v["letter"]["signature"] = serde_json::json!({ "name": "B Writer" });
+    v["letter"]["enclosures"] = serde_json::json!(["Schedule of works"]);
+    v["appendices"] = serde_json::json!([{ "title": "Method", "body": [prose("Appendix text.")] }]);
+    let d = doc(&v);
+    let html = String::from_utf8(rendered(&d, &Default::default(), Format::Html)).unwrap();
+    let body = docx_part(&rendered(&d, &Default::default(), Format::Docx), "word/document.xml").unwrap();
+    for x in [&html, &body] {
+        let at = |s: &str| x.find(s).unwrap_or_else(|| panic!("no {s:?}"));
+        assert!(at("Body.") < at("B Writer") && at("B Writer") < at("Schedule of works"));
+        assert!(at("Schedule of works") < at("Appendix A"));
+    }
+    // In Word the appendix still starts a new page.
+    let appendix = body.split("<w:p>").find(|p| p.contains("Appendix A")).unwrap();
+    assert!(appendix.contains("<w:pageBreakBefore/>"));
+}

@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 
 use crate::markdown::{Inline, MdBlock};
 use crate::model::{Align, CoverLayout, MediaType};
-use crate::render::{CONTROL, PHOTO, Prepared};
+use crate::render::{CONTROL, LETTER, LetterLook, PHOTO, Prepared};
 use crate::resolve::{RBlock, RFigure, RTable, cell_inlines};
 use crate::template::Colour;
 
@@ -174,6 +174,7 @@ fn markup_with_band(p: &Prepared, band_mm: f64, full: bool) -> Markup {
             CoverLayout::Classic => w.cover(),
             CoverLayout::Photo => w.photo_cover(),
             CoverLayout::Head => w.head(),
+            CoverLayout::Letter => w.letter_head(),
         }
     } else {
         let _ = writeln!(
@@ -191,6 +192,7 @@ fn markup_with_band(p: &Prepared, band_mm: f64, full: bool) -> Markup {
         w.o.push_str("#outline(title: none, depth: 3)\n#pagebreak(weak: true)\n\n");
     }
     w.blocks(&d.body);
+    w.letter_foot();
     for a in &d.appendices {
         w.o.push_str("#pagebreak(weak: true)\n");
         w.heading(1, w.toc.contains(a.anchor.as_str()), &a.heading(), Some(&a.anchor));
@@ -474,6 +476,164 @@ impl W<'_> {
             self.o.push_str("]\n");
         }
         let _ = writeln!(self.o, "]\n#v({}mm)\n", num(h.after_mm));
+    }
+
+    /// A picture of an asset at the size `LetterLook::fit` gives it, so it is the same size in every writer.
+    fn letter_image(&self, id: &str, height_mm: f64, max_width_mm: f64, alt: &str) -> Option<String> {
+        let path = self.asset_path(id)?;
+        let (w, h) = LetterLook::fit(self.p.aspect(id)?, height_mm, max_width_mm);
+        Some(format!("#image({}, width: {}mm, height: {}mm, alt: {})", lit(path), num(w), num(h), lit(alt)))
+    }
+
+    /// One line of the letter: a block of `lh` line boxes at `pt`, with `below` millimetres under it.
+    fn letter_line(&mut self, text: &str, pt: f64, lh: f64, below: f64, style: &str) {
+        let _ = writeln!(
+            self.o,
+            "#block(above: 0mm, below: {}mm)[{}\n#text(size: {}pt{style})[{}]]",
+            num(below),
+            line_box(lh),
+            num(pt),
+            esc(text)
+        );
+    }
+
+    /// A label of the letter ("To", "Enclosures"): capitals, bold, in the accent, tracked.
+    fn letter_label(&mut self, text: &str) {
+        let lk = LETTER;
+        let _ = writeln!(
+            self.o,
+            "#block(above: 0mm, below: {}mm, sticky: true)[{}\n#text(size: {}pt, tracking: {}em, weight: \"bold\", fill: {})[#upper({})]]",
+            num(lk.label_after_mm),
+            line_box(lk.label_lh),
+            num(lk.label_pt),
+            num(lk.label_tracking),
+            rgb(self.p.template.cover_accent),
+            lit(text)
+        );
+    }
+
+    /// The letter's head (spec 0002 §4.2): no page of its own. The letterhead (the logo on the left, the
+    /// sender's name, address and the date on the right), an accent rule, the title, the label and the
+    /// recipient lines open page 1; the body follows. Every measurement is `LETTER`'s.
+    fn letter_head(&mut self) {
+        let p = self.p;
+        let t = &p.template;
+        let Some(l) = p.letter() else {
+            let _ = writeln!(self.o, "#block(below: 1.5em)[#text(size: 2.4em)[{}]]\n", esc(&p.doc.title));
+            return;
+        };
+        let lk = LETTER;
+        let text_mm = f64::from(t.page_width_mm - t.margin_left_mm - t.margin_right_mm);
+        let logo = l
+            .logo
+            .as_deref()
+            .and_then(|id| {
+                self.letter_image(
+                    id,
+                    lk.logo_mm,
+                    text_mm * lk.logo_col,
+                    l.sender_name.as_deref().unwrap_or(""),
+                )
+            })
+            .unwrap_or_default();
+        let _ = writeln!(
+            self.o,
+            "#grid(columns: ({}%, 1fr), align: (left + top, right + top), [{logo}], [",
+            num(lk.logo_col * 100.0)
+        );
+        let ink2 = format!(", fill: {}", rgb(t.ink_2));
+        if let Some(n) = &l.sender_name {
+            let style =
+                format!(", font: {}, weight: \"bold\", fill: {}", lit(&t.heading_font), rgb(t.heading_ink));
+            self.letter_line(n, lk.name_pt, lk.name_lh, lk.name_after_mm, &style);
+        }
+        for line in &l.sender_lines {
+            self.letter_line(line, lk.address_pt, lk.address_lh, 0.0, &ink2);
+        }
+        if let Some(date) = &l.date {
+            let _ = writeln!(self.o, "#v({}mm)", num(lk.date_above_mm));
+            self.letter_line(date, lk.address_pt, lk.address_lh, 0.0, &ink2);
+        }
+        self.o.push_str("])\n");
+        let _ = writeln!(
+            self.o,
+            "#block(width: 100%, height: {}pt, fill: {}, above: {}mm, below: {}mm)[]",
+            num(lk.rule_pt),
+            rgb(t.cover_accent),
+            num(lk.rule_above_mm),
+            num(lk.rule_below_mm)
+        );
+        let _ = writeln!(
+            self.o,
+            "#block(above: 0mm, below: {}mm, sticky: true)[{}\n#text(font: {}, weight: \"bold\", size: {}pt, fill: {})[{}]]",
+            num(lk.title_after_mm),
+            line_box(lk.title_lh),
+            lit(&t.heading_font),
+            num(lk.title_pt),
+            rgb(t.heading_ink),
+            esc(&p.doc.title)
+        );
+        self.letter_label(&l.recipient_label);
+        let n = l.recipient.len();
+        for (i, line) in l.recipient.iter().enumerate() {
+            let below = if i + 1 == n { lk.recipient_after_mm } else { 0.0 };
+            self.letter_line(line, t.body_size_pt.into(), lk.recipient_lh, below, "");
+        }
+        self.o.push('\n');
+    }
+
+    /// The letter's foot (spec 0002 §4.2), after the body and before any appendix: the signature block and
+    /// then the enclosures, each a block that does not break across pages.
+    fn letter_foot(&mut self) {
+        let p = self.p;
+        let t = &p.template;
+        let Some(l) = p.letter() else { return };
+        let lk = LETTER;
+        if let Some(s) = &l.signature {
+            let image = s
+                .image
+                .as_deref()
+                .and_then(|id| self.letter_image(id, lk.signature_image_mm, lk.signature_width_mm, &s.name))
+                .map(|i| format!("#place(bottom + left)[{i}]"))
+                .unwrap_or_default();
+            let _ = writeln!(
+                self.o,
+                "#block(breakable: false, above: {}mm, below: 0mm)[\n#block(width: {}mm, height: {}mm, stroke: (bottom: {}pt + {}), above: 0mm, below: {}mm)[{image}]",
+                num(lk.signature_above_mm),
+                num(lk.signature_width_mm),
+                num(lk.signature_height_mm),
+                num(lk.signature_rule_pt),
+                rgb(t.ink),
+                num(lk.signature_name_above_mm)
+            );
+            let style = format!(", weight: \"bold\", fill: {}", rgb(t.heading_ink));
+            self.letter_line(&s.name, lk.signature_name_pt, lk.signature_lh, 0.0, &style);
+            if let Some(title) = &s.title {
+                let ink2 = format!(", fill: {}", rgb(t.ink_2));
+                self.letter_line(title, lk.signature_title_pt, lk.signature_lh, 0.0, &ink2);
+            }
+            self.o.push_str("]\n");
+        }
+        if !l.enclosures.is_empty() {
+            // The space above is the outer block's: a container drops the space above its first child.
+            let _ = writeln!(
+                self.o,
+                "#block(breakable: false, above: {}mm, below: 0mm)[",
+                num(lk.enclosures_above_mm)
+            );
+            self.letter_label(&l.enclosures_label);
+            let _ = writeln!(
+                self.o,
+                "#block(above: 0mm, below: 0mm)[{}\n#set text(size: {}pt)\n#enum(tight: true, spacing: 0pt,",
+                line_box(lk.enclosure_lh),
+                num(lk.enclosure_pt)
+            );
+            for e in &l.enclosures {
+                let _ = writeln!(self.o, "  [{}],", esc(e));
+            }
+            self.o.push_str(")]\n]\n");
+        }
+        self.o.push('\n');
     }
 
     /// The photo cover (spec 0002 §4): a photograph across the head of the page, then on the cover paper the
@@ -1100,5 +1260,50 @@ mod tests {
         // A box with no items prints its notes as its text, in the ink, not as grey notes.
         let boxed = &src[src.find("What I need from you").unwrap()..src.find("Choose a contractor").unwrap()];
         assert!(!boxed.contains("size: 0.9em"), "{boxed}");
+    }
+
+    /// The letter is drawn on page 1 with no cover page, in the order of spec 0002 §4.2, and its signature
+    /// block and enclosures are blocks that do not break.
+    #[test]
+    fn the_letter_has_no_page_of_its_own_and_its_foot_does_not_break() {
+        let doc = crate::parse(include_str!("../../../../../examples/letter.json")).unwrap();
+        let supplied = std::collections::BTreeMap::from([
+            (
+                "logo".to_string(),
+                include_bytes!("../../../../../examples/assets/harbour-works-mark.svg").to_vec(),
+            ),
+            (
+                "signature".to_string(),
+                include_bytes!("../../../../../examples/assets/sample-signature.svg").to_vec(),
+            ),
+        ]);
+        let (assets, _) = crate::assets::collect(&doc, &supplied);
+        let (p, _) = crate::render::prepare(&doc, &assets, &crate::register::builtin_register()).unwrap();
+        let src = markup(&p).source;
+        assert!(!src.contains("#page(fill"), "a letter must not draw a cover page");
+        assert!(!src.contains(CONTROL));
+        let at = |s: &str| src.find(s).unwrap_or_else(|| panic!("no {s:?} in the markup"));
+        let order = [
+            "#grid(columns: (40%, 1fr)",
+            "#\"Harbour Works Ltd\"",
+            "#\"25 November 2026\"",
+            "height: 1.5pt, fill: rgb(\"#b8862e\")",
+            "#\"Quay wall repairs",
+            "#upper(\"To\")",
+            "#\"Ms A Reader\"",
+            "#\"Yours sincerely,\"",
+            "#block(breakable: false, above: 9mm",
+            "#block(width: 58mm, height: 16mm, stroke: (bottom: 0.75pt + rgb(\"#2b2925\"))",
+            "#\"B Writer\"",
+            "#block(breakable: false, above: 4.2mm",
+            "#upper(\"Enclosures\")",
+            "#\"Schedule of works\"",
+        ];
+        for pair in order.windows(2) {
+            assert!(at(pair[0]) < at(pair[1]), "{:?} must come before {:?}", pair[0], pair[1]);
+        }
+        // The logo is 14 mm high (it fits its column); the signature stands on the rule.
+        assert!(src.contains("height: 14mm, alt: \"Harbour Works Ltd\")"), "{src}");
+        assert!(src.contains("#place(bottom + left)[#image("));
     }
 }

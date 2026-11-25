@@ -55,6 +55,10 @@ pub struct Document {
     /// (0.2) The text on the left of the running foot, in place of the organisation and the notice.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub footer: Option<String>,
+    /// (0.2) The furniture of a letter: the letterhead, the addressee, the signature block and the
+    /// enclosures. Printed by the "letter" cover layout, and refused with any other.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub letter: Option<Letter>,
     /// The main matter.
     pub body: Vec<Block>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -94,6 +98,66 @@ pub struct CoverLogo {
     /// A role printed under the name, such as "Client".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+}
+
+/// The furniture of a letter (0.2, spec 0002 §4.2). Every value is text the tool gives: the core reads no
+/// clock and formats no date.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Letter {
+    /// The letterhead: who the letter is from.
+    pub sender: LetterSender,
+    /// The date as printed under the sender's address, such as "25 November 2026".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    /// The label over the recipient lines. Default "To".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipient_label: Option<String>,
+    /// The addressee, one line each: a name, an organisation, an address. At least one line.
+    #[schemars(length(min = 1))]
+    pub recipient: Vec<String>,
+    /// The signature block after the body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<LetterSignature>,
+    /// The label over the list of enclosures. Default "Enclosures".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enclosures_label: Option<String>,
+    /// What comes with the letter, as a numbered list after the signature block. Empty leaves the list out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enclosures: Vec<String>,
+}
+
+impl Letter {
+    pub const DEFAULT_RECIPIENT_LABEL: &'static str = "To";
+    pub const DEFAULT_ENCLOSURES_LABEL: &'static str = "Enclosures";
+}
+
+/// The sender of a letter: the letterhead (0.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LetterSender {
+    /// An asset id for the sender's logo, on the left of the letterhead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo: Option<String>,
+    /// The sender's name. Default the document's `organisation`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The sender's address, one line each.
+    pub lines: Vec<String>,
+}
+
+/// The signature block of a letter (0.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LetterSignature {
+    /// The name of the person who signs.
+    pub name: String,
+    /// Their title, under the name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// An asset id for an image of the signature, on the rule over the name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 /// Document control (spec 0001 §3.2).
@@ -467,8 +531,10 @@ pub struct TemplateOverrides {
     pub cover: Option<bool>,
     // The fields below are added in 0.2 (spec 0002 §3). Each is optional; an unset field keeps the default.
     /// "classic" (the default), "photo" (a photograph band, the summary and the logo strip on cards, and a
-    /// control block) or "head" (no cover page: the organisation, title, subtitle, notice and summary head
-    /// page 1, and the body follows on the same page).
+    /// control block), "head" (no cover page: the organisation, title, subtitle, notice and summary head
+    /// page 1, and the body follows on the same page) or "letter" (no cover page and no control page: the
+    /// document's `letter` opens page 1 with a letterhead, the title and the addressee, and closes the body
+    /// with a signature block and the enclosures).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover_layout: Option<CoverLayout>,
     /// The height of the cover photograph, millimetres.
@@ -597,6 +663,9 @@ pub enum CoverLayout {
     Photo,
     /// No cover page: a document head opens page 1, then the body follows on the same page.
     Head,
+    /// No cover page and no control page: a business letter. The document's `letter` gives the letterhead
+    /// and the addressee before the body, and the signature block and the enclosures after it.
+    Letter,
 }
 
 /// How a heading's number is printed (0.2).

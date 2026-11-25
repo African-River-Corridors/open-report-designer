@@ -60,6 +60,15 @@ fn expected_in(p: &Prepared, pdf: bool) -> Vec<String> {
                 out.push(value);
             }
         }
+    } else if let Some(l) = p.letter() {
+        // The letter's furniture before the body: the letterhead, the title and the addressee. The furniture
+        // after the body (the signature block and the enclosures) is added below.
+        out.extend(l.sender_name.clone());
+        out.extend(l.sender_lines.iter().cloned());
+        out.extend(l.date.clone());
+        out.push(d.title.clone());
+        out.push(l.recipient_label.clone());
+        out.extend(l.recipient.iter().cloned());
     } else if p.template.cover && p.template.cover_layout == CoverLayout::Head {
         out.extend(d.organisation.clone());
         out.push(d.title.clone());
@@ -92,6 +101,16 @@ fn expected_in(p: &Prepared, pdf: bool) -> Vec<String> {
         out.extend(d.toc.iter().map(|e| p.toc_text(e)));
     }
     blocks(p, &d.body, &mut out, pdf);
+    if let Some(l) = p.letter() {
+        if let Some(s) = &l.signature {
+            out.push(s.name.clone());
+            out.extend(s.title.clone());
+        }
+        if !l.enclosures.is_empty() {
+            out.push(l.enclosures_label.clone());
+            out.extend(l.enclosures.iter().cloned());
+        }
+    }
     for a in &d.appendices {
         out.push(a.heading());
         blocks(p, &a.body, &mut out, pdf);
@@ -359,6 +378,43 @@ fn the_briefing_note_example_has_the_same_structure_and_text_in_pdf_html_and_wor
 }
 
 #[test]
+fn the_letter_example_has_the_same_structure_and_text_in_pdf_html_and_word() {
+    conforms(&repo().join("examples/letter.json"));
+}
+
+/// A letter with only its required parts, and one with every part and an appendix after the enclosures.
+#[test]
+fn a_bare_letter_and_a_letter_with_an_appendix_conform_too() {
+    let mut bare = with_body(serde_json::json!([prose("Dear reader,"), prose("Yours faithfully,")]));
+    bare["ord"] = "0.2".into();
+    bare["template"] = serde_json::json!({ "cover_layout": "letter" });
+    bare["letter"] = serde_json::json!({ "sender": { "lines": [] }, "recipient": ["Ms A Reader"] });
+    let mut full = bare.clone();
+    full["organisation"] = "Harbour Works Ltd".into();
+    full["letter"] = serde_json::json!({
+        "sender": { "lines": ["1 Quay Road", "Port Example"] },
+        "date": "25 November 2026",
+        "recipient_label": "For the attention of",
+        "recipient": ["Ms A Reader", "Example Authority"],
+        "signature": { "name": "B Writer", "title": "Director" },
+        "enclosures_label": "With this letter",
+        "enclosures": ["Schedule of works", "Plan of the berths"]
+    });
+    full["appendices"] =
+        serde_json::json!([{ "title": "Method", "body": [prose("How the wall is repaired.")] }]);
+    for v in [bare, full] {
+        let d = doc(&v);
+        let a = ord::Assets::new();
+        let (p, _) = prepare(&d, &a, &ord::builtin_register()).unwrap();
+        let want = expected(&p);
+        assert_eq!(html_texts(&render(&d, &a, Format::Html)), want, "HTML differs from the document");
+        assert_eq!(docx_texts(&render(&d, &a, Format::Docx)), want, "Word differs from the document");
+        let missing = pdf_missing(&p, &render(&d, &a, Format::Pdf));
+        assert!(missing.is_empty(), "the PDF does not hold, in order: {missing:#?}");
+    }
+}
+
+#[test]
 fn the_stress_document_has_the_same_structure_and_text_in_pdf_html_and_word() {
     conforms(&repo().join("crates/ord/tests/fixtures/stress.json"));
 }
@@ -433,6 +489,7 @@ fn every_format_renders_the_same_bytes_twice() {
     for path in [
         repo().join("examples/screening-report.json"),
         repo().join("examples/photo-cover-report.json"),
+        repo().join("examples/letter.json"),
         repo().join("crates/ord/tests/fixtures/stress.json"),
     ] {
         let (d, a) = load(&path);

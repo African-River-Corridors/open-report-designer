@@ -13,7 +13,7 @@
 //! The zip has a fixed file order and a fixed time, so the same input gives the same bytes.
 
 mod font;
-mod image;
+pub(crate) mod image;
 mod parts;
 mod zip;
 
@@ -23,7 +23,7 @@ use std::fmt::Write as _;
 use crate::finding::Finding;
 use crate::markdown::{Inline, MdBlock};
 use crate::model::{Align, CoverLayout, MediaType};
-use crate::render::{CONTROL, PAGE_OF, PHOTO, Prepared};
+use crate::render::{CONTROL, LETTER, LetterLook, PAGE_OF, PHOTO, Prepared};
 use crate::resolve::{ControlView, RBlock, RDataBox, RFigure, RTable, cell_inlines};
 
 use parts::{DECL, REL};
@@ -211,6 +211,8 @@ struct PPr<'a> {
     no_keep_next: bool,
     page_break: bool,
     num: Option<(usize, u8)>,
+    /// `<w:spacing .../>` in place of the style's, whole.
+    spacing: Option<String>,
     ind_left: Option<u32>,
     jc: Option<&'a str>,
     sect: Option<String>,
@@ -234,6 +236,9 @@ impl PPr<'_> {
         }
         if let Some((id, lvl)) = self.num {
             let _ = write!(x, "<w:numPr><w:ilvl w:val=\"{lvl}\"/><w:numId w:val=\"{id}\"/></w:numPr>");
+        }
+        if let Some(s) = &self.spacing {
+            x.push_str(s);
         }
         if let Some(l) = self.ind_left {
             let _ = write!(x, "<w:ind w:left=\"{l}\"/>");
@@ -498,6 +503,7 @@ impl<'a, 'p> Writer<'a, 'p> {
                 CoverLayout::Classic => self.cover(),
                 CoverLayout::Photo => self.photo_cover(),
                 CoverLayout::Head => self.head(),
+                CoverLayout::Letter => self.letter_head(),
             }
         } else {
             let t = run(&d.title, "");
@@ -510,6 +516,7 @@ impl<'a, 'p> Writer<'a, 'p> {
             self.contents();
         }
         self.blocks(&d.body, true);
+        self.letter_foot();
         for a in &d.appendices {
             let content = self.bookmarked(&a.anchor, run(&a.heading(), ""));
             self.para(&PPr { style: Some("Heading1"), page_break: true, ..PPr::default() }, &content);
@@ -541,6 +548,124 @@ impl<'a, 'p> Writer<'a, 'p> {
         self.para(&PPr::style("HeadRule"), "");
         if let Some(s) = &d.summary {
             self.md_blocks(s, Ctx { style: "Summary", depth: 0 });
+        }
+    }
+
+    /// The letter's head (spec 0002 §4.2), at the top of the first body page, in the `Letter*` styles, which
+    /// take their sizes from `render::LETTER` as the PDF writer does. The letterhead is a borderless table of
+    /// two columns, the logo on the left and the sender on the right; then the accent rule, the title, the
+    /// label and the recipient lines. No section of its own.
+    fn letter_head(&mut self) {
+        let p = self.p;
+        let Some(l) = p.letter() else {
+            // `check` refuses the letter layout with no letter; print the title, as with no cover.
+            self.para(&PPr::style("Title"), &run(&p.doc.title, ""));
+            return;
+        };
+        let lk = LETTER;
+        let tw = twips(self.text_width_mm() as f32);
+        let c1 = (f64::from(tw) * lk.logo_col).round() as u32;
+        let c2 = tw - c1;
+        let _ = write!(
+            self.x,
+            "<w:tbl><w:tblPr><w:tblW w:w=\"{tw}\" w:type=\"dxa\"/><w:tblBorders><w:top w:val=\"nil\"/><w:left w:val=\"nil\"/><w:bottom w:val=\"nil\"/><w:right w:val=\"nil\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tblBorders>\
+             <w:tblLayout w:type=\"fixed\"/><w:tblCellMar><w:top w:w=\"0\" w:type=\"dxa\"/><w:left w:w=\"0\" w:type=\"dxa\"/><w:bottom w:w=\"0\" w:type=\"dxa\"/><w:right w:w=\"0\" w:type=\"dxa\"/></w:tblCellMar>\
+             <w:tblLook w:val=\"0000\"/></w:tblPr><w:tblGrid><w:gridCol w:w=\"{c1}\"/><w:gridCol w:w=\"{c2}\"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr>\
+             <w:tc><w:tcPr><w:tcW w:w=\"{c1}\" w:type=\"dxa\"/></w:tcPr>"
+        );
+        let mut logo = String::new();
+        if let Some(id) = &l.logo
+            && let Some(pic) = self.pic(id)
+        {
+            let (w, h) = LetterLook::fit(pic.aspect, lk.logo_mm, self.text_width_mm() * lk.logo_col);
+            let name = l.sender_name.clone().unwrap_or_default();
+            logo = self.inline(&pic, emu(w), emu(h), "Logo", &name);
+        }
+        let _ = write!(self.x, "<w:p><w:pPr><w:pStyle w:val=\"LetterLogo\"/></w:pPr>{logo}</w:p></w:tc>");
+        let _ = write!(self.x, "<w:tc><w:tcPr><w:tcW w:w=\"{c2}\" w:type=\"dxa\"/></w:tcPr>");
+        let before = self.x.len();
+        let mut cell = |style: &str, text: &str| {
+            let _ =
+                write!(self.x, "<w:p><w:pPr><w:pStyle w:val=\"{style}\"/></w:pPr>{}</w:p>", run(text, ""));
+        };
+        if let Some(n) = &l.sender_name {
+            cell("LetterSender", n);
+        }
+        for line in &l.sender_lines {
+            cell("LetterAddress", line);
+        }
+        if let Some(date) = &l.date {
+            cell("LetterDate", date);
+        }
+        if self.x.len() == before {
+            self.x.push_str("<w:p/>");
+        }
+        self.x.push_str("</w:tc></w:tr></w:tbl>");
+        // The rule follows at its own distance: not the gap the writer leaves under a report table.
+        self.after_table = false;
+        self.para(&PPr::style("LetterRule"), "");
+        self.para(&PPr::style("LetterTitle"), &run(&p.doc.title, ""));
+        self.para(&PPr::style("LetterLabel"), &run(&l.recipient_label, ""));
+        let n = l.recipient.len();
+        for (i, line) in l.recipient.iter().enumerate() {
+            let last = i + 1 == n;
+            let spacing =
+                last.then(|| format!("<w:spacing w:after=\"{}\"/>", twips(lk.recipient_after_mm as f32)));
+            self.para(
+                &PPr { style: Some("LetterRecipient"), no_keep_next: last, spacing, ..PPr::default() },
+                &run(line, ""),
+            );
+        }
+    }
+
+    /// The letter's foot (spec 0002 §4.2), after the body and before any appendix: the signature block, then
+    /// the enclosures. Each keeps on one page: every paragraph of it keeps with the next but the last.
+    fn letter_foot(&mut self) {
+        let p = self.p;
+        let Some(l) = p.letter() else { return };
+        let lk = LETTER;
+        if l.signature.is_none() && l.enclosures.is_empty() {
+            return;
+        }
+        // The block has its own space above, wider than the gap under a table.
+        self.after_table = false;
+        if let Some(s) = &l.signature {
+            let mut content = String::new();
+            if let Some(id) = &s.image
+                && let Some(pic) = self.pic(id)
+            {
+                let (w, h) = LetterLook::fit(pic.aspect, lk.signature_image_mm, lk.signature_width_mm);
+                content = self.inline(&pic, emu(w), emu(h), "Signature", &s.name);
+            }
+            self.para(&PPr::style("LetterSignatureSpace"), &content);
+            self.para(
+                &PPr {
+                    style: Some("LetterSignatureName"),
+                    no_keep_next: s.title.is_none(),
+                    ..PPr::default()
+                },
+                &run(&s.name, ""),
+            );
+            if let Some(t) = &s.title {
+                self.para(&PPr::style("LetterSignatureTitle"), &run(t, ""));
+            }
+        }
+        if !l.enclosures.is_empty() {
+            self.para(&PPr::style("LetterEnclosuresLabel"), &run(&l.enclosures_label, ""));
+            self.ordered.push((0, 1));
+            let num = self.ordered.len() + 1;
+            let n = l.enclosures.len();
+            for (i, e) in l.enclosures.iter().enumerate() {
+                self.para(
+                    &PPr {
+                        style: Some("LetterEnclosure"),
+                        no_keep_next: i + 1 == n,
+                        num: Some((num, 0)),
+                        ..PPr::default()
+                    },
+                    &run(e, ""),
+                );
+            }
         }
     }
 

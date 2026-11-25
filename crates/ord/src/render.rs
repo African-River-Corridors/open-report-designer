@@ -192,6 +192,33 @@ impl Prepared<'_> {
         Some(out.iter().map(|w| (w * 1000.0).round() / 1000.0).collect())
     }
 
+    /// The letter, when the document is laid out as one: the "letter" cover layout with the cover on. None
+    /// for every other layout.
+    pub fn letter(&self) -> Option<&crate::resolve::RLetter> {
+        let t = &self.template;
+        self.doc.letter.as_ref().filter(|_| t.cover && t.cover_layout == crate::model::CoverLayout::Letter)
+    }
+
+    /// The shape of an image asset, its height over its width, so every writer sizes a picture alike. None
+    /// for a missing asset, a font, or an image that cannot be read.
+    pub fn aspect(&self, id: &str) -> Option<f64> {
+        let a = self.assets.get(id)?;
+        let (w, h) = match a.media_type {
+            crate::model::MediaType::Png => {
+                crate::assets::png_size(&a.bytes).ok().map(|(w, h)| (f64::from(w), f64::from(h)))?
+            }
+            crate::model::MediaType::Jpeg => {
+                crate::assets::jpeg_size(&a.bytes).ok().map(|(w, h)| (f64::from(w), f64::from(h)))?
+            }
+            crate::model::MediaType::Svg => {
+                let size = crate::write::docx::image::parse_svg(&a.bytes).ok()?.size();
+                (f64::from(size.width()), f64::from(size.height()))
+            }
+            crate::model::MediaType::Font => return None,
+        };
+        (w > 0.0 && h > 0.0).then(|| h / w)
+    }
+
     /// The left of the running foot: the document's `footer`, or else the organisation and the notice,
     /// joined by " · ".
     pub fn footer_left(&self) -> String {
@@ -356,6 +383,100 @@ pub const HEAD: HeadLook = HeadLook {
     rule_below_mm: 4.0,
     after_mm: 4.0,
 };
+
+/// The measurements of the letter (`cover_layout: "letter"`, spec 0002 §4.2), shared by every writer so the
+/// three agree. Lengths are millimetres, sizes points, line heights multiples of the size.
+#[derive(Debug, Clone, Copy)]
+pub struct LetterLook {
+    /// The height of the sender's logo, and the share of the text width its column takes (a wider logo is
+    /// made smaller to fit it).
+    pub logo_mm: f64,
+    pub logo_col: f64,
+    pub name_pt: f64,
+    pub name_lh: f64,
+    /// The space between the sender's name and the address.
+    pub name_after_mm: f64,
+    pub address_pt: f64,
+    pub address_lh: f64,
+    /// The space between the address and the date.
+    pub date_above_mm: f64,
+    pub rule_pt: f64,
+    pub rule_above_mm: f64,
+    pub rule_below_mm: f64,
+    pub title_pt: f64,
+    pub title_lh: f64,
+    pub title_after_mm: f64,
+    /// The labels over the recipient lines and over the enclosures: capitals, bold, in the accent.
+    pub label_pt: f64,
+    pub label_lh: f64,
+    /// The tracking of a label, in ems.
+    pub label_tracking: f64,
+    pub label_after_mm: f64,
+    /// The recipient lines are at the body size.
+    pub recipient_lh: f64,
+    pub recipient_after_mm: f64,
+    pub signature_above_mm: f64,
+    /// The space to sign in, with a rule along its foot.
+    pub signature_width_mm: f64,
+    pub signature_height_mm: f64,
+    pub signature_rule_pt: f64,
+    /// The most the signature image may be high. It is never wider than the space.
+    pub signature_image_mm: f64,
+    /// The space between the rule and the name.
+    pub signature_name_above_mm: f64,
+    pub signature_name_pt: f64,
+    pub signature_title_pt: f64,
+    pub signature_lh: f64,
+    pub enclosures_above_mm: f64,
+    pub enclosure_pt: f64,
+    pub enclosure_lh: f64,
+}
+
+pub const LETTER: LetterLook = LetterLook {
+    logo_mm: 14.0,
+    logo_col: 0.4,
+    name_pt: 11.5,
+    name_lh: 1.3,
+    name_after_mm: 1.2,
+    address_pt: 8.6,
+    address_lh: 1.45,
+    date_above_mm: 1.6,
+    rule_pt: 1.5,
+    rule_above_mm: 3.2,
+    rule_below_mm: 5.3,
+    title_pt: 17.0,
+    title_lh: 1.2,
+    title_after_mm: 4.8,
+    label_pt: 7.6,
+    label_lh: 1.3,
+    label_tracking: 0.12,
+    label_after_mm: 1.2,
+    recipient_lh: 1.5,
+    recipient_after_mm: 4.8,
+    signature_above_mm: 9.0,
+    signature_width_mm: 58.0,
+    signature_height_mm: 16.0,
+    signature_rule_pt: 0.75,
+    signature_image_mm: 15.0,
+    signature_name_above_mm: 1.4,
+    signature_name_pt: 9.6,
+    signature_title_pt: 8.6,
+    signature_lh: 1.35,
+    enclosures_above_mm: 4.2,
+    enclosure_pt: 9.6,
+    enclosure_lh: 1.5,
+};
+
+impl LetterLook {
+    /// The size of a picture of the given shape (height over width) that is `height_mm` high, made smaller
+    /// when it would be wider than `max_width_mm`: (width, height), millimetres. Every writer sizes the
+    /// letter's logo and signature image by this rule.
+    pub fn fit(aspect: f64, height_mm: f64, max_width_mm: f64) -> (f64, f64) {
+        let aspect = if aspect.is_finite() && aspect > 0.0 { aspect } else { 1.0 };
+        let width = height_mm / aspect;
+        if width > max_width_mm { (max_width_mm, max_width_mm * aspect) } else { (width, height_mm) }
+    }
+}
 
 /// The title of the document-control page, and of the control block on a photo cover.
 pub const CONTROL: &str = "Document control";
