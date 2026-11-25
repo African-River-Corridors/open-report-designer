@@ -1,0 +1,72 @@
+{
+  "ord": "0.2",
+  "class": "report",
+  "title": "Quay wall repairs: the winter closure of berths 2 and 3",
+  "organisation": "Harbour Works Ltd",
+  "language": "en-GB",
+  "control": {
+    "revision": "A",
+    "date": "2026-11-25",
+    "status": "draft",
+    "sensitivity": "internal"
+  },
+  "contents": false,
+  "footer": "Harbour Works Ltd · Quay wall repairs",
+  "letter": {
+    "sender": {
+      "logo": "logo",
+      "name": "Harbour Works Ltd",
+      "lines": ["1 Quay Road", "Port Example", "office@harbour-works.example"]
+    },
+    "date": "25 November 2026",
+    "recipient_label": "To",
+    "recipient": ["Ms A Reader", "Harbour Master", "Example Authority", "2 Pier Street, Port Example"],
+    "signature": { "name": "B Writer", "title": "Director", "image": "signature" },
+    "enclosures_label": "Enclosures",
+    "enclosures": ["Schedule of works", "Plan of the closed berths"]
+  },
+  "body": [
+    { "type": "prose", "markdown": "Dear Ms Reader," },
+    { "type": "prose", "markdown": "Thank you for meeting us on 18 November. This letter sets out the programme we propose for the repairs to the quay wall, and asks for your agreement to close berths 2 and 3 while the work is done." },
+    { "type": "prose", "markdown": "We propose three stages. Each berth is closed for one stage only, so one of the two is open at all times." },
+    {
+      "type": "table",
+      "header": true,
+      "columns": [
+        { "title": "Stage" },
+        { "title": "Work" },
+        { "title": "Berth closed" },
+        { "title": "Dates" }
+      ],
+      "rows": [
+        ["1", "Survey of the wall and the fenders", "None", "5 to 9 January 2027"],
+        ["2", "Repairs to the wall at berth 2", "Berth 2", "12 January to 6 February 2027"],
+        ["3", "Repairs to the wall at berth 3", "Berth 3", "9 February to 5 March 2027"]
+      ]
+    },
+    { "type": "prose", "markdown": "We need two things from the Authority:\n\n1. your **agreement to the closure dates** above, by 11 December 2026;\n2. a **notice to mariners** for each closure, issued two weeks before it starts." },
+    { "type": "prose", "markdown": "The enclosed schedule gives the work in each stage, and the plan shows the closed berths. We are glad to go through both with your team." },
+    { "type": "prose", "markdown": "Yours sincerely," }
+  ],
+  "assets": {
+    "logo": { "media_type": "image/svg+xml", "path": "assets/harbour-works-mark.svg" },
+    "signature": { "media_type": "image/svg+xml", "path": "assets/sample-signature.svg" }
+  },
+  "template": {
+    "cover_layout": "letter",
+    "cover_accent": "#b8862e",
+    "heading_ink": "#24343f",
+    "accent_ground": "#24343f",
+    "table_header_ink": "#ffffff",
+    "running_head": false,
+    "section_page_break": false,
+    "body_size_pt": 10,
+    "line_height": 1.5,
+    "paragraph_spacing_pt": 5.25,
+    "list_indent_mm": 5.8,
+    "table_widths": "content",
+    "table_size_pt": 9.5,
+    "table_padding_mm": [1.3, 2.1],
+    "margins_mm": { "top": 18, "bottom": 20, "left": 22, "right": 22 }
+  }
+}
