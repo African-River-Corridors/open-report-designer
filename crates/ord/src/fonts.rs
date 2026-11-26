@@ -56,3 +56,22 @@ pub fn bundled() -> &'static [FontFile] {
 pub fn family(name: &str) -> impl Iterator<Item = &'static FontFile> {
     BUNDLED.iter().filter(move |f| f.family == name)
 }
+
+/// The family a font names for itself: its typographic family (name ID 16), or else its family (name ID 1),
+/// as a Unicode name record. `None` when it has neither.
+///
+/// The typesetter files a font under a shorter family: it trims width and weight words from name ID 1, so
+/// "Barlow Semi Condensed" becomes "Barlow". A template, and the text of an SVG figure, name the family as the
+/// font does; the writers look a font up by both names (spec 0002 §5).
+pub fn own_family(font: &typst::text::Font) -> Option<String> {
+    use ttf_parser::name_id::{FAMILY, TYPOGRAPHIC_FAMILY};
+    let face = ttf_parser::Face::parse(font.data(), font.index()).ok()?;
+    let name = |id: u16| {
+        face.names()
+            .into_iter()
+            .filter(|n| n.name_id == id)
+            .find_map(|n| n.to_string())
+            .filter(|s| !s.trim().is_empty())
+    };
+    name(TYPOGRAPHIC_FAMILY).or_else(|| name(FAMILY))
+}

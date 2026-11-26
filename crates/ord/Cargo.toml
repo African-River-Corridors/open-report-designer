@@ -25,11 +25,12 @@ resvg = { version = "0.47", default-features = false, features = ["text"] }
 typst = "0.15.1"
 typst-pdf = "0.15.1"
 typst-layout = "0.15.1"
+# Reads the family a document font names for itself (fonts::own_family). Typst already depends on it.
+ttf-parser = "0.25"
 
 # Second readers for the tests: they are not the code under test.
 [dev-dependencies]
 jsonschema = { version = "0.60", default-features = false }
 lopdf = "0.46.0"
 roxmltree = "0.21"
-ttf-parser = "0.25"
 zip = { version = "2", default-features = false, features = ["deflate"] }
